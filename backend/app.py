@@ -536,19 +536,26 @@ def edit_user(current_user, user_id):
         
     data = request.json or {}
     name = data.get('name', '').strip()
+    department = data.get('department', '').strip()
     role = data.get('role', '').strip()
     status = data.get('status', '').strip()
+    phone = data.get('phone', '').strip() if 'phone' in data else None
+    bio = data.get('bio', '').strip() if 'bio' in data else None
     
     if name:
         target_user.name = name
+    if department:
+        target_user.department = department
     if role:
-        if role not in ['Developer', 'Project Manager', 'Compliance Officer', 'InfoSec Lead', 'QA Lead', 'CAB Committee', 'Admin']:
-            return jsonify({'error': 'Invalid role'}), 400
         target_user.role = role
     if status:
         if status not in ['PENDING', 'APPROVED', 'REJECTED']:
             return jsonify({'error': 'Invalid status'}), 400
         target_user.status = status
+    if phone is not None:
+        target_user.phone = phone
+    if bio is not None:
+        target_user.bio = bio
         
     db.session.commit()
     
@@ -557,7 +564,7 @@ def edit_user(current_user, user_id):
         user_id=current_user.id,
         username=current_user.email,
         action="USER_EDIT",
-        description=f"Administrator edited profile of user {target_user.email} (Name: {target_user.name}, Role: {target_user.role}, Status: {target_user.status})."
+        description=f"Super Administrator edited profile of user {target_user.email} (Name: {target_user.name}, Dept: {target_user.department}, Role: {target_user.role}, Status: {target_user.status})."
     )
     db.session.add(audit)
     db.session.commit()
@@ -565,6 +572,87 @@ def edit_user(current_user, user_id):
     return jsonify({
         'message': 'User details successfully updated.',
         'user': target_user.to_dict()
+    })
+
+@app.route('/api/admin/users', methods=['POST'])
+@token_required
+@admin_required
+def create_admin_user(current_user):
+    data = request.json or {}
+    name = data.get('name', '').strip()
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '').strip() or 'Bank123!'
+    department = data.get('department', 'Software Engineering').strip()
+    role = data.get('role', 'TEAM_MEMBER').strip()
+    status = data.get('status', 'APPROVED').strip()
+
+    if not name or not email:
+        return jsonify({'error': 'Name and email are required.'}), 400
+
+    if not email.endswith(INTERNAL_DOMAIN):
+        return jsonify({'error': f'Corporate email must belong to {INTERNAL_DOMAIN}'}), 400
+
+    if User.query.filter_by(email=email).first():
+        return jsonify({'error': 'A user with this email address already exists.'}), 400
+
+    new_user = User(
+        name=name,
+        email=email,
+        password_hash=generate_password_hash(password),
+        department=department,
+        role=role,
+        status=status
+    )
+    db.session.add(new_user)
+    db.session.commit()
+
+    audit = AuditLog(
+        user_id=current_user.id,
+        username=current_user.email,
+        action="USER_CREATE",
+        description=f"Super Administrator created user {new_user.email} in department '{department}' with role '{role}'."
+    )
+    db.session.add(audit)
+    db.session.commit()
+
+    return jsonify({
+        'message': f"User '{new_user.name}' successfully created.",
+        'user': new_user.to_dict()
+    }), 201
+
+@app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@token_required
+@admin_required
+def delete_admin_user(current_user, user_id):
+    if user_id == current_user.id:
+        return jsonify({'error': 'Super Administrator cannot delete their own active account.'}), 400
+
+    target_user = db.session.get(User, user_id)
+    if not target_user:
+        return jsonify({'error': 'User not found.'}), 404
+
+    deleted_email = target_user.email
+    deleted_name = target_user.name
+
+    # Unassign any tasks assigned to this user
+    for task in target_user.tasks:
+        task.assignee_id = None
+
+    db.session.delete(target_user)
+    db.session.commit()
+
+    audit = AuditLog(
+        user_id=current_user.id,
+        username=current_user.email,
+        action="USER_DELETE",
+        description=f"Super Administrator deleted user account '{deleted_name}' ({deleted_email})."
+    )
+    db.session.add(audit)
+    db.session.commit()
+
+    return jsonify({
+        'message': f"User '{deleted_name}' successfully deleted.",
+        'user_id': user_id
     })
 
 # ----------------- PROJECTS & DYNAMIC PHASES -----------------

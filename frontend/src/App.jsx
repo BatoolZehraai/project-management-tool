@@ -57,7 +57,8 @@ import {
   Settings,
   Camera,
   Phone,
-  Briefcase
+  Briefcase,
+  Users
 } from 'lucide-react';
 import bahlLogo from './assets/bahl-logo.png';
 
@@ -136,12 +137,22 @@ export default function App() {
   const [pendingUsers, setPendingUsers] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
-  const [userFilterStatus, setUserFilterStatus] = useState('ACTIVE');
+  const [userFilterStatus, setUserFilterStatus] = useState('ALL');
   const [userFilterRole, setUserFilterRole] = useState('ALL');
+  const [userFilterDept, setUserFilterDept] = useState('ALL');
   const [editingUserId, setEditingUserId] = useState(null);
   const [editUserName, setEditUserName] = useState('');
+  const [editUserDepartment, setEditUserDepartment] = useState('');
   const [editUserRole, setEditUserRole] = useState('');
   const [editUserStatus, setEditUserStatus] = useState('');
+  const [showCreateUserForm, setShowCreateUserForm] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserDepartment, setNewUserDepartment] = useState('Software Engineering');
+  const [newUserRole, setNewUserRole] = useState('TEAM_MEMBER');
+  const [newUserStatus, setNewUserStatus] = useState('APPROVED');
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [showProjDirectoryModal, setShowProjDirectoryModal] = useState(false);
   const [projSearchQuery, setProjSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('board'); // 'board' or 'portfolio'
@@ -781,7 +792,8 @@ export default function App() {
     }
     try {
       const res = await axios.put(`${API_BASE}/admin/users/${userId}`, {
-        name: editUserName,
+        name: editUserName.trim(),
+        department: editUserDepartment,
         role: editUserRole,
         status: editUserStatus
       });
@@ -792,6 +804,56 @@ export default function App() {
       if (authUser && userId === authUser.id) {
         setAuthUser(res.data.user);
       }
+    } catch (err) {
+      showError(err);
+    }
+  };
+
+  const handleCreateAdminUser = async (e) => {
+    e.preventDefault();
+    if (!newUserName.trim() || !newUserEmail.trim()) {
+      showError("Name and Corporate Email are required.");
+      return;
+    }
+    if (!newUserEmail.toLowerCase().endsWith('@bankalhabib.com')) {
+      showError("Corporate email must end with @bankalhabib.com");
+      return;
+    }
+    setIsCreatingUser(true);
+    try {
+      const res = await axios.post(`${API_BASE}/admin/users`, {
+        name: newUserName.trim(),
+        email: newUserEmail.trim().toLowerCase(),
+        password: newUserPassword.trim() || 'Bank123!',
+        department: newUserDepartment,
+        role: newUserRole,
+        status: newUserStatus
+      });
+      showSuccess(res.data.message);
+      setNewUserName('');
+      setNewUserEmail('');
+      setNewUserPassword('');
+      setShowCreateUserForm(false);
+      fetchAllUsers();
+      fetchApprovedUsers();
+    } catch (err) {
+      showError(err);
+    } finally {
+      setIsCreatingUser(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId, userName) => {
+    if (authUser && userId === authUser.id) {
+      showError("You cannot delete your own Super Admin account.");
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to permanently delete user entry '${userName}'? This action is irreversible.`)) return;
+    try {
+      const res = await axios.delete(`${API_BASE}/admin/users/${userId}`);
+      showSuccess(res.data.message);
+      fetchAllUsers();
+      fetchApprovedUsers();
     } catch (err) {
       showError(err);
     }
@@ -1915,24 +1977,30 @@ export default function App() {
           {/* User Controls Panel */}
           <div className="flex items-center space-x-1.5 sm:space-x-2.5 shrink-0 ml-auto md:ml-0">
             
-            {/* Admin center */}
-            {authUser.role === 'Admin' && (
+            {/* Super Admin User Management */}
+            {(authUser?.role === 'SUPER_ADMIN' || authUser?.role === 'Admin') && (
               <button
                 onClick={() => {
-                  setUserFilterStatus('ACTIVE');
+                  setUserFilterStatus('ALL');
                   setUserSearchQuery('');
                   setUserFilterRole('ALL');
+                  setUserFilterDept('ALL');
+                  setShowCreateUserForm(false);
                   fetchAllUsers();
                   setShowAdminModal(true);
                 }}
-                className={`text-[10px] sm:text-[11px] font-bold px-2 sm:px-3 py-1.5 rounded-lg flex items-center space-x-1 transition shadow-md cursor-pointer ${
+                className={`text-[10px] sm:text-[11px] font-bold px-2.5 sm:px-3 py-1.5 rounded-lg flex items-center space-x-1.5 transition shadow-md cursor-pointer ${
                   isDarkMode 
                     ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-purple-900/30 border border-purple-400/20' 
-                    : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-sm shadow-purple-500/20'
+                    : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-sm shadow-violet-500/20'
                 }`}
+                title="Super Admin User Management Console"
               >
-                <UserCheck className="h-3.5 w-3.5 shrink-0" />
-                <span className="hidden sm:inline">Approvals</span>
+                <Users className="h-3.5 w-3.5 shrink-0" />
+                <span>User Management</span>
+                {allUsers.filter(u => u.status === 'PENDING').length > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse ml-0.5" title="Pending Registration Requests" />
+                )}
               </button>
             )}
 
@@ -3733,82 +3801,306 @@ export default function App() {
         </div>
       )}
 
-      {/* ADMIN PORTAL: USER DIRECTORY & ACCESS APPROVALS */}
+      {/* SUPER ADMIN USER MANAGEMENT CONSOLE */}
       {showAdminModal && (
-        <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
-          <div className={`border rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4 sm:space-y-5 transition ${
-            isDarkMode ? 'bg-zinc-900 border-zinc-900 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900'
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className={`border rounded-2xl max-w-4xl w-full max-h-[92vh] overflow-y-auto p-5 sm:p-7 shadow-2xl space-y-5 transition-all animate-in fade-in duration-200 my-auto ${
+            isDarkMode ? 'bg-[#121422] border-zinc-800 text-zinc-100 shadow-black/70' : 'bg-white border-slate-200 text-slate-900 shadow-xl'
           }`}>
             
-            <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
-              <h3 className="text-xs font-bold uppercase tracking-widest flex items-center gap-1.5 text-purple-400">
-                <UserCheck className="h-4.5 w-4.5" />
-                Corporate User Directory & Approvals
-              </h3>
-              <button 
-                onClick={() => {
-                  setShowAdminModal(false);
-                  setEditingUserId(null);
-                }}
-                className="text-zinc-500 hover:text-zinc-300 transition"
-              >
-                <X className="h-4 w-4" />
-              </button>
+            {/* Header */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+              <div className="flex items-center space-x-3">
+                <div className={`p-2.5 rounded-xl border ${
+                  isDarkMode ? 'bg-purple-950/40 border-purple-800/50 text-purple-400' : 'bg-violet-100 border-violet-200 text-violet-700'
+                }`}>
+                  <Users className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm sm:text-base font-extrabold tracking-tight">Enterprise User Management</h3>
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                      Super Admin
+                    </span>
+                  </div>
+                  <p className={`text-[11px] sm:text-xs mt-0.5 ${isDarkMode ? 'text-zinc-400' : 'text-slate-500'}`}>
+                    Super Admin console to view, register, edit departments/roles, approve, and manage all employee entries
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateUserForm(!showCreateUserForm)}
+                  className={`text-xs font-bold px-3.5 py-1.5 rounded-xl border transition flex items-center gap-1.5 shadow-sm cursor-pointer ${
+                    showCreateUserForm
+                      ? (isDarkMode ? 'bg-zinc-800 border-zinc-700 text-zinc-300' : 'bg-slate-100 border-slate-300 text-slate-700')
+                      : (isDarkMode ? 'bg-purple-600 hover:bg-purple-500 text-white border-purple-500 shadow-purple-950/50' : 'bg-violet-600 hover:bg-violet-500 text-white border-violet-600 shadow-violet-500/20')
+                  }`}
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>{showCreateUserForm ? 'Close Form' : 'New User Entry'}</span>
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setShowAdminModal(false);
+                    setEditingUserId(null);
+                    setShowCreateUserForm(false);
+                  }}
+                  className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                    isDarkMode ? 'border-zinc-800 hover:bg-zinc-800 text-zinc-400' : 'border-slate-200 hover:bg-slate-100 text-slate-500'
+                  }`}
+                  title="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
-            {/* Search & Filter Controls */}
-            <div className="flex flex-col sm:flex-row gap-2.5 text-xs">
-              <input
-                type="text"
-                placeholder="Search name or email..."
-                value={userSearchQuery}
-                onChange={(e) => setUserSearchQuery(e.target.value)}
-                className={`flex-1 border rounded-lg px-3 py-2 focus:outline-none transition ${
-                  isDarkMode 
-                    ? 'bg-zinc-950 border-zinc-850 text-zinc-100 focus:border-zinc-700' 
-                    : 'bg-zinc-50 border-zinc-200 text-zinc-800 focus:border-zinc-300 shadow-sm'
+            {/* Metrics Overview Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+              <div className={`p-3 rounded-xl border text-xs ${
+                isDarkMode ? 'bg-[#151728] border-zinc-800/80' : 'bg-slate-50 border-slate-200/80'
+              }`}>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Total Users</span>
+                <span className="text-lg font-black mt-0.5 block">{allUsers.length}</span>
+              </div>
+              <div className={`p-3 rounded-xl border text-xs ${
+                isDarkMode ? 'bg-[#151728] border-zinc-800/80' : 'bg-slate-50 border-slate-200/80'
+              }`}>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Approved / Active</span>
+                <span className="text-lg font-black text-emerald-500 mt-0.5 block">
+                  {allUsers.filter(u => u.status === 'APPROVED').length}
+                </span>
+              </div>
+              <div className={`p-3 rounded-xl border text-xs ${
+                isDarkMode ? 'bg-[#151728] border-zinc-800/80' : 'bg-slate-50 border-slate-200/80'
+              }`}>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Pending Requests</span>
+                <span className={`text-lg font-black mt-0.5 block flex items-center gap-1.5 ${
+                  allUsers.filter(u => u.status === 'PENDING').length > 0 ? 'text-amber-400' : 'text-zinc-500'
+                }`}>
+                  {allUsers.filter(u => u.status === 'PENDING').length}
+                  {allUsers.filter(u => u.status === 'PENDING').length > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                  )}
+                </span>
+              </div>
+              <div className={`p-3 rounded-xl border text-xs ${
+                isDarkMode ? 'bg-[#151728] border-zinc-800/80' : 'bg-slate-50 border-slate-200/80'
+              }`}>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Departments</span>
+                <span className="text-lg font-black text-violet-400 mt-0.5 block">
+                  {[...new Set(allUsers.map(u => u.department).filter(Boolean))].length || 6}
+                </span>
+              </div>
+            </div>
+
+            {/* Collapsible New User Creation Form */}
+            {showCreateUserForm && (
+              <form onSubmit={handleCreateAdminUser} className={`p-4 sm:p-5 rounded-xl border space-y-4 animate-in fade-in duration-200 ${
+                isDarkMode ? 'bg-[#16182c] border-purple-500/30 shadow-lg shadow-purple-950/20' : 'bg-violet-50/50 border-violet-200 shadow-md'
+              }`}>
+                <div className="flex items-center justify-between border-b pb-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-violet-500">
+                    <UserPlus className="h-4 w-4" />
+                    <span>Create New Employee Entry</span>
+                  </h4>
+                  <span className="text-[10px] text-zinc-400">Pre-approved by Super Admin</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10.5px] font-bold uppercase tracking-wider mb-1 text-zinc-400">Full Name *</label>
+                    <input 
+                      type="text"
+                      placeholder="e.g. Asad Raza"
+                      value={newUserName}
+                      onChange={e => setNewUserName(e.target.value)}
+                      required
+                      className={`w-full text-xs px-3 py-2 rounded-lg border focus:outline-hidden focus:ring-2 ${
+                        isDarkMode ? 'bg-[#0f101d] border-zinc-700 text-zinc-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] font-bold uppercase tracking-wider mb-1 text-zinc-400">Corporate Email *</label>
+                    <input 
+                      type="email"
+                      placeholder="name.id@bankalhabib.com"
+                      value={newUserEmail}
+                      onChange={e => setNewUserEmail(e.target.value)}
+                      required
+                      className={`w-full text-xs px-3 py-2 rounded-lg border focus:outline-hidden focus:ring-2 ${
+                        isDarkMode ? 'bg-[#0f101d] border-zinc-700 text-zinc-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] font-bold uppercase tracking-wider mb-1 text-zinc-400">Password</label>
+                    <input 
+                      type="password"
+                      placeholder="Default: Bank123!"
+                      value={newUserPassword}
+                      onChange={e => setNewUserPassword(e.target.value)}
+                      className={`w-full text-xs px-3 py-2 rounded-lg border focus:outline-hidden focus:ring-2 ${
+                        isDarkMode ? 'bg-[#0f101d] border-zinc-700 text-zinc-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] font-bold uppercase tracking-wider mb-1 text-zinc-400">Governing Department</label>
+                    <select
+                      value={newUserDepartment}
+                      onChange={e => setNewUserDepartment(e.target.value)}
+                      className={`w-full text-xs px-3 py-2 rounded-lg border focus:outline-hidden focus:ring-2 cursor-pointer ${
+                        isDarkMode ? 'bg-[#0f101d] border-zinc-700 text-zinc-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    >
+                      {['Software Engineering', 'Business Analysis', 'Architecture & Design', 'QA', 'Compliance', 'Operations & Release', 'Executive Management'].map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] font-bold uppercase tracking-wider mb-1 text-zinc-400">Role Authority</label>
+                    <select
+                      value={newUserRole}
+                      onChange={e => setNewUserRole(e.target.value)}
+                      className={`w-full text-xs px-3 py-2 rounded-lg border focus:outline-hidden focus:ring-2 cursor-pointer ${
+                        isDarkMode ? 'bg-[#0f101d] border-zinc-700 text-zinc-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    >
+                      <option value="TEAM_MEMBER">TEAM MEMBER</option>
+                      <option value="DEPT_HEAD">DEPT HEAD</option>
+                      <option value="SUPER_ADMIN">SUPER ADMIN</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] font-bold uppercase tracking-wider mb-1 text-zinc-400">Initial Status</label>
+                    <select
+                      value={newUserStatus}
+                      onChange={e => setNewUserStatus(e.target.value)}
+                      className={`w-full text-xs px-3 py-2 rounded-lg border focus:outline-hidden focus:ring-2 cursor-pointer ${
+                        isDarkMode ? 'bg-[#0f101d] border-zinc-700 text-zinc-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    >
+                      <option value="APPROVED">APPROVED (Active)</option>
+                      <option value="PENDING">PENDING</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end space-x-2 pt-2 border-t">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateUserForm(false)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                      isDarkMode ? 'border-zinc-750 text-zinc-300 hover:bg-zinc-800' : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isCreatingUser}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    {isCreatingUser ? (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        <span>Creating User...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="h-3.5 w-3.5" />
+                        <span>Save User Entry</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Search, Department & Role Controls */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search user name, email, dept..."
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                  className={`w-full border rounded-xl pl-3 pr-3 py-2 focus:outline-hidden focus:ring-2 transition text-xs ${
+                    isDarkMode 
+                      ? 'bg-[#151728] border-zinc-750 text-zinc-100 focus:ring-purple-500/30' 
+                      : 'bg-slate-50 border-slate-200 text-slate-800 focus:ring-violet-500/20'
+                  }`}
+                />
+              </div>
+
+              <select
+                value={userFilterDept}
+                onChange={(e) => setUserFilterDept(e.target.value)}
+                className={`border rounded-xl px-3 py-2 focus:outline-hidden focus:ring-2 transition cursor-pointer text-xs ${
+                  isDarkMode ? 'bg-[#151728] border-zinc-750 text-zinc-200' : 'bg-slate-50 border-slate-200 text-slate-700'
                 }`}
-              />
+              >
+                <option value="ALL">All Departments</option>
+                {['Software Engineering', 'Business Analysis', 'Architecture & Design', 'QA', 'Compliance', 'Operations & Release', 'Executive Management'].map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+
               <select
                 value={userFilterRole}
                 onChange={(e) => setUserFilterRole(e.target.value)}
-                className={`border rounded-lg px-2.5 py-2 focus:outline-none transition cursor-pointer ${
-                  isDarkMode ? 'bg-zinc-950 border-zinc-850 text-zinc-200' : 'bg-zinc-50 border-zinc-200 text-zinc-700 shadow-sm'
+                className={`border rounded-xl px-3 py-2 focus:outline-hidden focus:ring-2 transition cursor-pointer text-xs ${
+                  isDarkMode ? 'bg-[#151728] border-zinc-750 text-zinc-200' : 'bg-slate-50 border-slate-200 text-slate-700'
                 }`}
               >
-                <option value="ALL" className={isDarkMode ? 'bg-zinc-900 text-zinc-100' : 'bg-white text-zinc-900'}>All Roles</option>
+                <option value="ALL">All Authority Roles</option>
+                <option value="SUPER_ADMIN">SUPER ADMIN</option>
+                <option value="DEPT_HEAD">DEPT HEAD</option>
+                <option value="TEAM_MEMBER">TEAM MEMBER</option>
                 {['Developer', 'Project Manager', 'Compliance Officer', 'InfoSec Lead', 'QA Lead', 'CAB Committee', 'Admin'].map(r => (
-                  <option key={r} value={r} className={isDarkMode ? 'bg-zinc-900 text-zinc-100' : 'bg-white text-zinc-900'}>{r}</option>
+                  <option key={r} value={r}>{r}</option>
                 ))}
               </select>
             </div>
 
-            {/* Status Category Tabs - Active / Pending / Approved / Rejected */}
-            <div className="flex flex-wrap items-center gap-2 pt-0.5 pb-2 border-b border-zinc-800/10 text-xs">
+            {/* Status Category Tabs */}
+            <div className="flex flex-wrap items-center gap-2 pt-0.5 pb-2 border-b text-xs">
               {[
                 { 
-                  key: 'ACTIVE', 
-                  label: 'Active Users', 
-                  count: allUsers.filter(u => u.status !== 'REJECTED').length, 
-                  activeClass: 'bg-violet-600 text-white shadow-sm' 
-                },
-                { 
-                  key: 'PENDING', 
-                  label: 'Pending', 
-                  count: allUsers.filter(u => u.status === 'PENDING').length, 
-                  activeClass: 'bg-amber-600 text-white shadow-sm' 
+                  key: 'ALL', 
+                  label: 'All Users', 
+                  count: allUsers.length, 
+                  activeClass: 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm' 
                 },
                 { 
                   key: 'APPROVED', 
-                  label: 'Approved', 
+                  label: 'Approved / Active', 
                   count: allUsers.filter(u => u.status === 'APPROVED').length, 
                   activeClass: 'bg-emerald-600 text-white shadow-sm' 
+                },
+                { 
+                  key: 'PENDING', 
+                  label: 'Pending Approvals', 
+                  count: allUsers.filter(u => u.status === 'PENDING').length, 
+                  activeClass: 'bg-amber-600 text-white shadow-sm' 
                 },
                 { 
                   key: 'REJECTED', 
                   label: 'Rejected', 
                   count: allUsers.filter(u => u.status === 'REJECTED').length, 
-                  activeClass: 'bg-red-600 text-white shadow-sm' 
+                  activeClass: 'bg-rose-600 text-white shadow-sm' 
                 },
               ].map(tab => {
                 const isSelected = userFilterStatus === tab.key;
@@ -3821,17 +4113,17 @@ export default function App() {
                       isSelected
                         ? tab.activeClass
                         : isDarkMode
-                          ? 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
-                          : 'bg-zinc-100 border border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200'
+                          ? 'bg-[#151728] border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                          : 'bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-200'
                     }`}
                   >
                     <span>{tab.label}</span>
                     <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-extrabold ${
                       isSelected
                         ? 'bg-black/25 text-white'
-                        : tab.key === 'REJECTED' && tab.count > 0
-                          ? (isDarkMode ? 'bg-red-950 text-red-400 border border-red-800/40' : 'bg-red-100 text-red-700 border border-red-200')
-                          : isDarkMode ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-200 text-zinc-700'
+                        : tab.key === 'PENDING' && tab.count > 0
+                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                          : isDarkMode ? 'bg-zinc-800 text-zinc-400' : 'bg-slate-200 text-slate-700'
                     }`}>
                       {tab.count}
                     </span>
@@ -3840,38 +4132,28 @@ export default function App() {
               })}
             </div>
 
-            {/* Users Directory Scroll Area */}
-            <div className="space-y-3.5 max-h-[350px] overflow-y-auto pr-1">
+            {/* Users Directory List */}
+            <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
               {(() => {
                 const filteredUsers = allUsers.filter(u => {
-                  const searchText = `${u.name} ${u.email}`.toLowerCase();
+                  const searchText = `${u.name} ${u.email} ${u.department || ''}`.toLowerCase();
                   const queryWords = userSearchQuery.toLowerCase().split(/\s+/).filter(Boolean);
                   const matchesSearch = queryWords.length === 0 || queryWords.every(word => searchText.includes(word));
                   
                   const matchesStatus = userFilterStatus === 'ALL'
                     ? true
-                    : userFilterStatus === 'ACTIVE'
-                      ? u.status !== 'REJECTED'
-                      : u.status === userFilterStatus;
+                    : u.status === userFilterStatus;
                   const matchesRole = userFilterRole === 'ALL' || u.role === userFilterRole;
-                  return matchesSearch && matchesStatus && matchesRole;
+                  const matchesDept = userFilterDept === 'ALL' || (u.department && u.department.toLowerCase() === userFilterDept.toLowerCase());
+                  return matchesSearch && matchesStatus && matchesRole && matchesDept;
                 });
 
                 if (filteredUsers.length === 0) {
                   return (
                     <div className="text-center py-10 space-y-1.5">
-                      <p className="text-xs text-zinc-500 font-medium">
-                        {userFilterStatus === 'REJECTED' 
-                          ? 'No rejected users stored.' 
-                          : userFilterStatus === 'PENDING'
-                            ? 'No pending user registrations.'
-                            : 'No users match the search/filter criteria.'}
+                      <p className="text-xs text-zinc-400 font-semibold">
+                        No users match the search/filter criteria.
                       </p>
-                      {userFilterStatus === 'REJECTED' && (
-                        <p className="text-[11px] text-zinc-400">
-                          Users rejected by administrators are stored here and can be approved at any time.
-                        </p>
-                      )}
                     </div>
                   );
                 }
@@ -3880,133 +4162,209 @@ export default function App() {
                   const isEditing = editingUserId === u.id;
                   
                   return (
-                    <div key={u.id} className={`border p-3.5 rounded-lg text-xs transition ${
-                      isDarkMode ? 'bg-zinc-950 border-zinc-900' : 'bg-zinc-50 border-zinc-200 shadow-sm'
+                    <div key={u.id} className={`border p-3.5 sm:p-4 rounded-xl text-xs transition ${
+                      isDarkMode ? 'bg-[#151728] border-zinc-800/80 hover:border-zinc-700' : 'bg-white border-slate-200/90 shadow-xs hover:border-slate-300'
                     }`}>
                       {isEditing ? (
                         /* EDIT MODE USER VIEW */
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="space-y-3.5">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                             <div className="space-y-1">
-                              <label className="text-[9px] uppercase tracking-wider font-extrabold text-zinc-500">Edit Name</label>
+                              <label className="text-[9px] uppercase tracking-wider font-extrabold text-zinc-400">Full Name</label>
                               <input
                                 type="text"
                                 value={editUserName}
                                 onChange={(e) => setEditUserName(e.target.value)}
-                                className={`w-full border rounded-lg px-2.5 py-1.5 focus:outline-none transition ${
-                                  isDarkMode ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-250 text-zinc-800 shadow-sm'
+                                className={`w-full border rounded-lg px-2.5 py-1.5 focus:outline-hidden transition ${
+                                  isDarkMode ? 'bg-[#0f101d] border-zinc-700 text-zinc-100' : 'bg-white border-slate-300 text-slate-900'
                                 }`}
                               />
                             </div>
+
                             <div className="space-y-1">
-                              <label className="text-[9px] uppercase tracking-wider font-extrabold text-zinc-550">Edit Role</label>
+                              <label className="text-[9px] uppercase tracking-wider font-extrabold text-zinc-400">Department</label>
+                              <select
+                                value={editUserDepartment}
+                                onChange={(e) => setEditUserDepartment(e.target.value)}
+                                className={`w-full border rounded-lg px-2 py-1.5 focus:outline-hidden transition cursor-pointer ${
+                                  isDarkMode ? 'bg-[#0f101d] border-zinc-700 text-zinc-100' : 'bg-white border-slate-300 text-slate-900'
+                                }`}
+                              >
+                                {['Software Engineering', 'Business Analysis', 'Architecture & Design', 'QA', 'Compliance', 'Operations & Release', 'Executive Management'].map(d => (
+                                  <option key={d} value={d}>{d}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[9px] uppercase tracking-wider font-extrabold text-zinc-400">Authority Role</label>
                               <select
                                 value={editUserRole}
                                 onChange={(e) => setEditUserRole(e.target.value)}
-                                className={`w-full border rounded-lg px-2 py-1.5 focus:outline-none transition ${
-                                  isDarkMode ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-250 text-zinc-800 shadow-sm'
+                                className={`w-full border rounded-lg px-2 py-1.5 focus:outline-hidden transition cursor-pointer ${
+                                  isDarkMode ? 'bg-[#0f101d] border-zinc-700 text-zinc-100' : 'bg-white border-slate-300 text-slate-900'
                                 }`}
                               >
+                                <option value="TEAM_MEMBER">TEAM MEMBER</option>
+                                <option value="DEPT_HEAD">DEPT HEAD</option>
+                                <option value="SUPER_ADMIN">SUPER ADMIN</option>
                                 {['Developer', 'Project Manager', 'Compliance Officer', 'InfoSec Lead', 'QA Lead', 'CAB Committee', 'Admin'].map(r => (
                                   <option key={r} value={r}>{r}</option>
                                 ))}
                               </select>
                             </div>
+
                             <div className="space-y-1">
-                              <label className="text-[9px] uppercase tracking-wider font-extrabold text-zinc-550">Edit Status</label>
+                              <label className="text-[9px] uppercase tracking-wider font-extrabold text-zinc-400">Account Status</label>
                               <select
                                 value={editUserStatus}
                                 onChange={(e) => setEditUserStatus(e.target.value)}
                                 disabled={u.email === 'admin@bankalhabib.com'}
-                                className={`w-full border rounded-lg px-2 py-1.5 focus:outline-none transition disabled:opacity-55 ${
-                                  isDarkMode ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-250 text-zinc-800 shadow-sm'
+                                className={`w-full border rounded-lg px-2 py-1.5 focus:outline-hidden transition cursor-pointer disabled:opacity-55 ${
+                                  isDarkMode ? 'bg-[#0f101d] border-zinc-700 text-zinc-100' : 'bg-white border-slate-300 text-slate-900'
                                 }`}
                               >
-                                <option value="PENDING">PENDING</option>
                                 <option value="APPROVED">APPROVED</option>
+                                <option value="PENDING">PENDING</option>
                                 <option value="REJECTED">REJECTED</option>
                               </select>
                             </div>
                           </div>
                           
-                          <div className="flex justify-end space-x-2 pt-1 border-t border-zinc-900/30">
+                          <div className="flex justify-end space-x-2 pt-2 border-t">
                             <button
-                              onClick={() => handleSaveUserEdit(u.id)}
-                              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3.5 py-1.5 rounded-lg transition"
-                            >
-                              Save Changes
-                            </button>
-                            <button
+                              type="button"
                               onClick={() => setEditingUserId(null)}
-                              className={`border font-bold px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
-                                isDarkMode ? 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700' : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-100 shadow-sm'
+                              className={`border font-bold px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                                isDarkMode ? 'border-zinc-750 text-zinc-300 hover:bg-zinc-800' : 'border-slate-300 text-slate-700 hover:bg-slate-100'
                               }`}
                             >
                               Cancel
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveUserEdit(u.id)}
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-1.5 rounded-lg transition shadow-sm cursor-pointer"
+                            >
+                              Save Changes
+                            </button>
                           </div>
                         </div>
                       ) : (
-                        /* READ-ONLY / DEFAULT LIST VIEW */
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                          <div>
-                            <div className="flex items-center space-x-2">
-                              <h4 className="font-bold text-xs">{u.name}</h4>
-                              <span className={`text-[8.5px] border px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
-                                u.status === 'APPROVED' 
-                                  ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/25' 
-                                  : u.status === 'REJECTED'
-                                    ? 'bg-red-500/10 text-red-500 border-red-500/25'
-                                    : 'bg-amber-500/10 text-amber-500 border-amber-500/25'
+                        /* READ-ONLY / DEFAULT USER ROW VIEW */
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                          <div className="flex items-center space-x-3 min-w-0">
+                            {/* Avatar */}
+                            {u.avatar_url ? (
+                              <img 
+                                src={`http://127.0.0.1:5000${u.avatar_url}`} 
+                                alt={u.name} 
+                                className="w-9 h-9 rounded-full object-cover border border-purple-500/30 shrink-0" 
+                              />
+                            ) : (
+                              <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                                isDarkMode ? 'bg-purple-950/60 text-purple-200 border border-purple-800/40' : 'bg-violet-100 text-violet-700 border border-violet-200'
                               }`}>
-                                {u.status}
-                              </span>
-                              {u.status === 'REJECTED' && (
-                                <span className={`text-[8.5px] px-1.5 py-0.5 rounded font-medium border ${
-                                  isDarkMode ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-zinc-100 border-zinc-200 text-zinc-600'
+                                {u.name ? u.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U'}
+                              </div>
+                            )}
+
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <h4 className="font-bold text-xs truncate">{u.name}</h4>
+                                <span className={`text-[8px] sm:text-[8.5px] border px-2 py-0.5 rounded-md font-extrabold uppercase tracking-wider ${
+                                  u.status === 'APPROVED' 
+                                    ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/25' 
+                                    : u.status === 'REJECTED'
+                                      ? 'bg-rose-500/10 text-rose-500 border-rose-500/25'
+                                      : 'bg-amber-500/10 text-amber-500 border-amber-500/25 animate-pulse'
                                 }`}>
-                                  Stored in Rejected
+                                  {u.status}
                                 </span>
-                              )}
+                              </div>
+
+                              <p className="text-zinc-400 font-mono text-[10.5px] truncate">{u.email}</p>
+
+                              <div className="flex flex-wrap items-center gap-2 mt-1">
+                                <span className={`inline-flex items-center gap-1 text-[9.5px] font-semibold px-2 py-0.5 rounded border ${
+                                  isDarkMode ? 'bg-[#0f101d] text-zinc-300 border-zinc-800' : 'bg-slate-100 text-slate-700 border-slate-200'
+                                }`}>
+                                  <Building2 className="h-3 w-3 text-violet-400" />
+                                  <span>{u.department || 'Software Engineering'}</span>
+                                </span>
+
+                                <span className={`text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
+                                  u.role === 'SUPER_ADMIN' || u.role === 'Admin'
+                                    ? 'bg-purple-500/15 text-purple-400 border-purple-500/30'
+                                    : u.role === 'DEPT_HEAD'
+                                      ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30'
+                                      : isDarkMode ? 'bg-zinc-800 text-zinc-300 border-zinc-700' : 'bg-slate-100 text-slate-600 border-slate-200'
+                                }`}>
+                                  {u.role === 'SUPER_ADMIN' || u.role === 'Admin' ? 'SUPER ADMIN' : (u.role || '').replace(/_/g, ' ')}
+                                </span>
+                              </div>
                             </div>
-                            <p className="text-zinc-550 font-mono text-[10px] mt-0.5">{u.email}</p>
-                            <p className="text-[10px] text-violet-500 font-bold uppercase mt-1">
-                              SDLC Role: {u.role === 'SUPER_ADMIN' || u.role === 'Admin' ? 'SUPER ADMIN' : (u.role || '').replace(/_/g, ' ')}
-                            </p>
                           </div>
                           
-                          <div className="flex items-center space-x-2 shrink-0 self-end sm:self-center">
+                          <div className="flex items-center space-x-1.5 shrink-0 self-end sm:self-center">
                             <button
+                              type="button"
                               onClick={() => {
                                 setEditingUserId(u.id);
                                 setEditUserName(u.name);
+                                setEditUserDepartment(u.department || 'Software Engineering');
                                 setEditUserRole(u.role);
                                 setEditUserStatus(u.status);
                               }}
-                              className={`font-semibold px-2.5 py-1.5 rounded-lg border transition text-xs cursor-pointer ${
+                              className={`font-semibold px-2.5 py-1.5 rounded-lg border transition text-xs flex items-center gap-1 cursor-pointer ${
                                 isDarkMode 
                                   ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-zinc-200' 
-                                  : 'bg-white border-zinc-200 hover:bg-zinc-100 text-zinc-700 shadow-sm'
+                                  : 'bg-white border-slate-200 hover:bg-slate-100 text-slate-700 shadow-xs'
                               }`}
+                              title="Edit user details"
                             >
-                              Edit
+                              <Pencil className="h-3 w-3" />
+                              <span>Edit</span>
                             </button>
                             
-                            {u.status !== 'APPROVED' && u.email !== 'admin@bankalhabib.com' && (
+                            {u.status !== 'APPROVED' && (
                               <button
+                                type="button"
                                 onClick={() => handleUserStatusUpdate(u.id, 'APPROVED')}
-                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-sm shadow-emerald-600/20 cursor-pointer"
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-2.5 py-1.5 rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1"
+                                title="Approve user registration"
                               >
-                                Approve
+                                <Check className="h-3 w-3" />
+                                <span>Approve</span>
                               </button>
                             )}
                             
                             {u.status !== 'REJECTED' && u.email !== 'admin@bankalhabib.com' && (
                               <button
+                                type="button"
                                 onClick={() => handleUserStatusUpdate(u.id, 'REJECTED')}
-                                className="bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-sm shadow-red-600/20 cursor-pointer"
+                                className={`text-xs px-2.5 py-1.5 rounded-lg border font-semibold transition cursor-pointer flex items-center gap-1 ${
+                                  isDarkMode ? 'border-amber-800/40 text-amber-400 hover:bg-amber-950/30' : 'border-amber-200 text-amber-700 hover:bg-amber-50'
+                                }`}
+                                title="Reject user"
                               >
-                                Reject
+                                <X className="h-3 w-3" />
+                                <span>Reject</span>
+                              </button>
+                            )}
+
+                            {u.email !== 'admin@bankalhabib.com' && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteUser(u.id, u.name)}
+                                className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                                  isDarkMode 
+                                    ? 'border-rose-800/40 text-rose-400 hover:bg-rose-950/30' 
+                                    : 'border-rose-200 text-rose-600 hover:bg-rose-50'
+                                }`}
+                                title="Delete user entry"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
                               </button>
                             )}
                           </div>
@@ -4018,19 +4376,25 @@ export default function App() {
               })()}
             </div>
 
-            <div className="text-right pt-2.5 border-t border-zinc-900/40">
+            {/* Footer */}
+            <div className="flex items-center justify-between pt-3 border-t text-xs">
+              <span className={`text-[11px] ${isDarkMode ? 'text-zinc-500' : 'text-slate-400'}`}>
+                Bank AL Habib Enterprise SDLC Security Governance
+              </span>
               <button
+                type="button"
                 onClick={() => {
                   setShowAdminModal(false);
                   setEditingUserId(null);
+                  setShowCreateUserForm(false);
                 }}
-                className={`text-xs px-4 py-2 rounded-lg border font-bold transition ${
+                className={`text-xs px-4 py-2 rounded-xl border font-bold transition cursor-pointer ${
                   isDarkMode 
-                    ? 'bg-zinc-800 border-zinc-800 hover:bg-zinc-700 text-zinc-300' 
-                    : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200 text-zinc-700 shadow-sm'
+                    ? 'bg-zinc-800 border-zinc-750 hover:bg-zinc-700 text-zinc-300' 
+                    : 'bg-slate-100 border-slate-300 hover:bg-slate-200 text-slate-700 shadow-xs'
                 }`}
               >
-                Close Directory
+                Close Console
               </button>
             </div>
 

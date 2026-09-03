@@ -58,9 +58,11 @@ import {
   Camera,
   Phone,
   Briefcase,
-  Users
+  Users,
+  Terminal
 } from 'lucide-react';
 import bahlLogo from './assets/bahl-logo.png';
+import ApiStudio from './components/ApiStudio';
 
 const API_BASE = 'http://127.0.0.1:5000/api';
 
@@ -1327,7 +1329,18 @@ export default function App() {
           </span>
         );
     }
-};
+  };
+
+  // RENDER DEDICATED API MANAGEMENT & CHAINED EXECUTION STUDIO PAGE
+  if (viewMode === 'api_studio') {
+    return (
+      <ApiStudio
+        onBack={() => setViewMode(token && authUser ? 'board' : 'auth')}
+        isDarkMode={isDarkMode}
+        authUser={authUser}
+      />
+    );
+  }
 
   // RENDER AUTHENTICATION VIEW IF NOT SIGNED IN
   if (!token || !authUser) {
@@ -1353,29 +1366,36 @@ export default function App() {
               <img src={bahlLogo} alt="Bank AL Habib Logo" className="h-9 sm:h-10 w-auto object-contain" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className={`text-xs font-black tracking-wider uppercase font-mono px-1.5 py-0.5 rounded border ${
-                  isDarkMode ? 'bg-purple-950/40 text-purple-300 border-purple-800/50' : 'bg-violet-100/80 text-violet-700 border-violet-200'
-                }`}>
-                  BAHL
-                </span>
-                <span className={`font-bold text-xs sm:text-sm tracking-tight ${isDarkMode ? 'text-zinc-100' : 'text-slate-900'}`}>
-                  SDLC Governance Engine
-                </span>
-              </div>
+              <span className={`font-bold text-xs sm:text-sm tracking-tight ${isDarkMode ? 'text-zinc-100' : 'text-slate-900'}`}>
+                Bank AL Habib Limited
+              </span>
               <p className={`text-[10px] hidden sm:block ${isDarkMode ? 'text-zinc-400' : 'text-slate-500'}`}>
-                Bank AL Habib Limited • Enterprise Pipeline Management
+                Enterprise Pipeline Management
               </p>
             </div>
           </div>
 
           <div className="flex items-center space-x-2.5">
-            <div className={`hidden md:flex items-center gap-1.5 text-[10.5px] font-bold px-2.5 py-1 rounded-full border ${
+            {/* <div className={`hidden md:flex items-center gap-1.5 text-[10.5px] font-bold px-2.5 py-1 rounded-full border ${
               isDarkMode ? 'bg-emerald-950/30 border-emerald-800/40 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-700'
             }`}>
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>ISO 20022 Compliance Certified</span>
-            </div>
+              <span>Commercial banking company</span>
+            </div> */}
+
+            {/* API Management Navigation Button */}
+            <button
+              onClick={() => setViewMode('api_studio')}
+              className={`text-[11px] font-extrabold px-3 py-1.5 rounded-lg flex items-center space-x-1.5 transition shadow-sm cursor-pointer ${
+                isDarkMode 
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-purple-950/40 border border-purple-400/30' 
+                  : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-sm shadow-violet-500/20'
+              }`}
+              title="Open Insomnia/Postman-style API Management & Chained Execution Studio"
+            >
+              <Terminal className="h-3.5 w-3.5 shrink-0" />
+              <span>API Management</span>
+            </button>
 
             <button
               onClick={toggleTheme}
@@ -1855,21 +1875,6 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Card Footer */}
-                <div className={`px-6 py-3.5 border-t text-[10px] flex flex-col sm:flex-row justify-between items-center gap-2 ${
-                  isDarkMode ? 'bg-[#0d0f19] border-zinc-800 text-zinc-400' : 'bg-slate-50 border-slate-200 text-slate-500'
-                }`}>
-                  <div className="flex items-center gap-1.5">
-                    <Shield className="h-3 w-3 text-emerald-500" />
-                    <span>256-Bit Encrypted Corporate Gateway</span>
-                  </div>
-                  <div className="flex items-center gap-2 font-mono">
-                    <span>TLS 1.3 Certified</span>
-                    <span>•</span>
-                    <span>v2.5.0</span>
-                  </div>
-                </div>
-
               </div>
             </div>
           </div>
@@ -1911,15 +1916,15 @@ export default function App() {
                 />
               </div>
               <div className="hidden sm:flex flex-col">
-                <span className={`font-black tracking-wider text-xs uppercase font-mono leading-none ${
+                <span className={`font-bold tracking-tight text-xs leading-none ${
                   isDarkMode ? 'text-zinc-100' : 'text-slate-900'
                 }`}>
-                  BAHL
+                  Bank AL Habib Limited
                 </span>
-                <span className={`text-[9px] font-semibold tracking-tight ${
+                <span className={`text-[9.5px] font-medium tracking-tight mt-0.5 ${
                   isDarkMode ? 'text-zinc-400' : 'text-slate-500'
                 }`}>
-                  SDLC Governance
+                  Commercial Banking Company
                 </span>
               </div>
             </div>
@@ -2003,6 +2008,20 @@ export default function App() {
                 )}
               </button>
             )}
+
+            {/* API Management Navigation Button */}
+            <button
+              onClick={() => setViewMode('api_studio')}
+              className={`text-[10px] sm:text-[11px] font-extrabold px-3 py-1.5 rounded-lg flex items-center space-x-1.5 transition shadow-sm cursor-pointer ${
+                isDarkMode 
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-purple-950/40 border border-purple-400/30' 
+                  : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-sm shadow-violet-500/20'
+              }`}
+              title="Open Insomnia/Postman-style API Management & Chained Execution Studio"
+            >
+              <Terminal className="h-3.5 w-3.5 shrink-0" />
+              <span>API Management</span>
+            </button>
 
             {/* Profile */}
             <button

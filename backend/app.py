@@ -11,6 +11,7 @@ from sqlalchemy.exc import OperationalError
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import jwt
+import requests
 
 from models import db, User, Project, ProjectPhase, Task, Comment, AuditLog, FileItem, ActivityLog
 from config import Config
@@ -654,6 +655,120 @@ def delete_admin_user(current_user, user_id):
         'message': f"User '{deleted_name}' successfully deleted.",
         'user_id': user_id
     })
+
+# ----------------- API STUDIO CORS PROXY EXECUTOR -----------------
+
+@app.route('/api/proxy/execute', methods=['POST'])
+def proxy_execute():
+    """
+    Dedicated server-side HTTP proxy executor for API Management & Chained Execution Studio.
+    Bypasses browser CORS restrictions, measures execution latency (ms) and response size.
+    """
+    data = request.json or {}
+    method = str(data.get('method', 'GET')).upper()
+    url = str(data.get('url', '')).strip()
+    headers = data.get('headers', {})
+    params = data.get('params', {})
+    body = data.get('body', None)
+    timeout = int(data.get('timeout', 15))
+
+    if not url:
+        return jsonify({'error': 'Target URL is required.'}), 400
+
+    if not (url.startswith('http://') or url.startswith('https://')):
+        url = 'http://' + url
+
+    # Clean headers (avoid forwarding problematic hop-by-hop headers)
+    cleaned_headers = {}
+    if isinstance(headers, dict):
+        for k, v in headers.items():
+            if k.lower() not in ['host', 'content-length']:
+                cleaned_headers[k] = str(v)
+
+    start_time = time.perf_counter()
+    try:
+        req_kwargs = {
+            'headers': cleaned_headers,
+            'params': params,
+            'timeout': timeout,
+            'allow_redirects': True
+        }
+
+        if method in ['POST', 'PUT', 'PATCH', 'DELETE']:
+            if isinstance(body, dict) or isinstance(body, list):
+                req_kwargs['json'] = body
+            elif isinstance(body, str) and body:
+                req_kwargs['data'] = body.encode('utf-8')
+
+        resp = requests.request(method, url, **req_kwargs)
+        duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+
+        # Parse response payload
+        content_type = resp.headers.get('content-type', '')
+        resp_data = None
+        is_json = False
+        if 'application/json' in content_type.lower():
+            try:
+                resp_data = resp.json()
+                is_json = True
+            except Exception:
+                resp_data = resp.text
+        else:
+            try:
+                resp_data = resp.json()
+                is_json = True
+            except Exception:
+                resp_data = resp.text
+
+        response_headers = {k: v for k, v in resp.headers.items()}
+        size_bytes = len(resp.content) if resp.content else 0
+
+        return jsonify({
+            'status_code': resp.status_code,
+            'status_text': resp.reason,
+            'time_ms': duration_ms,
+            'size_bytes': size_bytes,
+            'headers': response_headers,
+            'data': resp_data,
+            'is_json': is_json
+        })
+
+    except requests.exceptions.Timeout:
+        duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+        return jsonify({
+            'error': f'Request timed out after {timeout} seconds.',
+            'status_code': 504,
+            'status_text': 'Gateway Timeout',
+            'time_ms': duration_ms,
+            'size_bytes': 0,
+            'headers': {},
+            'data': {'error': f'Connection timed out after {timeout}s to {url}'},
+            'is_json': True
+        }), 200
+    except requests.exceptions.ConnectionError as e:
+        duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+        return jsonify({
+            'error': 'Connection failed: Could not connect to target host.',
+            'status_code': 502,
+            'status_text': 'Bad Gateway',
+            'time_ms': duration_ms,
+            'size_bytes': 0,
+            'headers': {},
+            'data': {'error': str(e)},
+            'is_json': True
+        }), 200
+    except Exception as e:
+        duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+        return jsonify({
+            'error': f'Proxy Execution Error: {str(e)}',
+            'status_code': 500,
+            'status_text': 'Internal Server Error',
+            'time_ms': duration_ms,
+            'size_bytes': 0,
+            'headers': {},
+            'data': {'error': str(e)},
+            'is_json': True
+        }), 200
 
 # ----------------- PROJECTS & DYNAMIC PHASES -----------------
 

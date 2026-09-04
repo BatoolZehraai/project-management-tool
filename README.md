@@ -421,11 +421,9 @@ The database initializes with seed accounts for testing and evaluation across ro
 
 | Name | Corporate Email | Password | Department | System Role | Operational Access Scope |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Corporate Admin** | `admin@bankalhabib.com` | `Admin@12345` | IT Administration | `SUPER_ADMIN` | Global Access, Directory Management, All Stages |
-| **Batool Zehra** | `batool.123@bankalhabib.com` | `Project@123` | Project Management | `DEPT_HEAD` | Governs Stage 1 (BRD/SRS Requirements) |
-| **Lead Architect** | `architect@bankalhabib.com` | `Arch@12345` | Architecture | `DEPT_HEAD` | Governs Stage 2 (Architecture & System Design) |
-| **Senior Engineer** | `developer@bankalhabib.com` | `Dev@12345` | Software Engineering | `TEAM_MEMBER` | Governs Stage 3 (Core Banking Implementation) |
-| **Lead QA Tester** | `qa@bankalhabib.com` | `Test@12345` | Quality Assurance | `TEAM_MEMBER` | Governs Stage 4 (Quality Engineering & SIT) |
+| **Corporate Admin** | `admin@bankalhabib.com` | `Admin@123!` | IT Administration | `SUPER_ADMIN` | Global Access, Directory Management, All Stages |
+| **Lead BA Analyst** | `analyst.992@bankalhabib.com` | `Password123!` | Business Analysis | `TEAM_MEMBER` | Governs Stage 1 (Business Analysis & Requirements) |
+| **Senior Engineer** | `dev.991@bankalhabib.com` | `Password123!` | Software Engineering | `TEAM_MEMBER` | Governs Stage 3 (Dev Implementation & Task Sprint) |
 
 ---
 

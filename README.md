@@ -3,8 +3,6 @@
 [![React](https://img.shields.io/badge/Frontend-React%2019%20%7C%20Vite%20%7C%20Tailwind%204-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![Flask](https://img.shields.io/badge/Backend-Flask%203.0%20%7C%20Python-000000?style=flat-square&logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
 [![Database](https://img.shields.io/badge/Database-PostgreSQL%20%2F%20SQLite%20Fallback-336791?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Compliance](https://img.shields.io/badge/Compliance-Regulatory%20Audit%20Trail-8A2BE2?style=flat-square)](https://github.com/)
-[![License](https://img.shields.io/badge/License-Proprietary%20BAHL-crimson?style=flat-square)](LICENSE)
 
 An enterprise-grade Software Development Life Cycle (SDLC) Governance, Regulatory Audit, and API Pipeline Orchestration platform built specifically for **Bank AL Habib Limited (BAHL)**. The platform enforces strict inter-departmental boundary control, Stage Ownership with Role-Based Access Control (RBAC), universal cross-department read visibility, complete regulatory compliance audit logging, and an Insomnia/Postman-grade chained API management studio with server-side proxy execution.
 
@@ -32,9 +30,6 @@ An enterprise-grade Software Development Life Cycle (SDLC) Governance, Regulator
   - [Frontend Setup (Vite / React 19 / Tailwind 4)](#frontend-setup)
 - [Default Corporate Credentials](#default-corporate-credentials)
 - [Verification & Automated Testing Suite](#verification--automated-testing-suite)
-- [Security & Compliance Guardrails](#security--compliance-guardrails)
-- [License & Operational Notice](#license--operational-notice)
-
 ---
 
 ## Project Identity & System Overview
@@ -398,13 +393,14 @@ export PORT=5000
 python app.py
 The Flask backend will start on http://localhost:5000 with the REST API served under /api/*.
 ```
+---
 ### Frontend Setup
-Prerequisites
-Node.js (v18.x, v20.x, or newer)
 
-npm or yarn
+#### Prerequisites
+* Node.js (v18.x, v20.x, or newer)
+* `npm` or `yarn`
 
-### Installation Steps
+#### Installation Steps
 ``` Bash
 # 1. Navigate to the frontend directory
 cd frontend
@@ -418,3 +414,26 @@ npm run dev
 cd backend
 python test_suite.py
 ```
+---
+## Default Corporate Credentials
+
+The database initializes with seed accounts for testing and evaluation across roles:
+
+| Name | Corporate Email | Password | Department | System Role | Operational Access Scope |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Corporate Admin** | `admin@bankalhabib.com` | `Admin@12345` | IT Administration | `SUPER_ADMIN` | Global Access, Directory Management, All Stages |
+| **Batool Zehra** | `batool.123@bankalhabib.com` | `Project@123` | Project Management | `DEPT_HEAD` | Governs Stage 1 (BRD/SRS Requirements) |
+| **Lead Architect** | `architect@bankalhabib.com` | `Arch@12345` | Architecture | `DEPT_HEAD` | Governs Stage 2 (Architecture & System Design) |
+| **Senior Engineer** | `developer@bankalhabib.com` | `Dev@12345` | Software Engineering | `TEAM_MEMBER` | Governs Stage 3 (Core Banking Implementation) |
+| **Lead QA Tester** | `qa@bankalhabib.com` | `Test@12345` | Quality Assurance | `TEAM_MEMBER` | Governs Stage 4 (Quality Engineering & SIT) |
+
+---
+
+## Verification & Automated Testing Suite
+
+The project includes an automated test runner (`backend/test_suite.py`) covering governance permissions, proxy operations, and database integrity.
+
+```bash
+# Run tests inside the backend environment
+cd backend
+python test_suite.py

@@ -53,38 +53,41 @@ Standard project management tools fail within regulated financial environments d
 ## System Architecture
 
 The platform uses a decoupled client-server architecture with an intelligent dual-engine persistence layer.
----
-+---------------------------------------------------------------------------------------+
-|                                    PRESENTATION LAYER                                 |
-|               Vite + React 19 Single Page Application (SPA) + Tailwind CSS 4          |
-|                                                                                       |
-|   +-------------------+  +-------------------+  +-------------------+  +----------+   |
-|   |  Stage Kanban     |  | Stage File Tree   |  | API Studio Runner |  | Admin    |   |
-|   |  (RBAC Guarded)   |  | (Folder Explorer) |  | (2-Step Chaining) |  | Directory|   |
-|   +-------------------+  +-------------------+  +-------------------+  +----------+   |
-|             |                      |                      |                 |         |
-|             +----------------------+----------------------+-----------------+         |
-|                                    | (JWT Bearer / Axios / Fetch)                     |
-+------------------------------------|--------------------------------------------------+
-|
-v
-+---------------------------------------------------------------------------------------+
-|                                   APPLICATION LAYER                                   |
-|                             Flask 3.0 REST Framework (Python)                         |
-|                                                                                       |
-|   +-------------------------------------------------------------------------------+   |
-|   |              Security, Auth & Boundary Middleware (@require_auth)             |   |
-|   |    - JWT Verification      - Stage Ownership Engine     - RBAC Policy Matrix  |   |
-|   +-------------------------------------------------------------------------------+   |
-|          |                         |                           |                      |
-|          v                         v                           v                      |
-|   +--------------+         +---------------+           +--------------------+         |
-|   |  SDLC Stages |         | Regulatory    |           | Server-Side CORS   |         |
-|   |  & Tasks API |         | Audit Service |           | Proxy Runner       |         |
-|   +--------------+         +---------------+           +--------------------+         |
-+------------------------------------|--------------------------------------------------+
-|
-v
+## System Architecture
+
+The platform uses a decoupled client-server architecture with an intelligent dual-engine persistence layer.
+
+```mermaid
+graph TD
+    subgraph Frontend["Presentation Layer (Vite + React 19 + Tailwind 4)"]
+        A[Stage Kanban Board]
+        B[Stage File Tree]
+        C[API Studio Runner]
+        D[Admin Directory & Approvals]
+    end
+
+    subgraph Backend["Application Layer (Flask 3.0 REST API)"]
+        M["Security & RBAC Middleware (@require_auth)"]
+        E[SDLC Stages & Tasks API]
+        F[Regulatory Audit Service]
+        G[CORS Proxy Runner]
+        M --> E
+        M --> F
+        M --> G
+    end
+
+    subgraph Database["Data Access Layer (SQLAlchemy 2.0)"]
+        DB_Check{"Database Engine Probe"}
+        PG[(PostgreSQL - Primary Engine)]
+        SQL[(SQLite - Zero-Config Fallback)]
+        DB_Check -->|Active Connection| PG
+        DB_Check -->|Unavailable / Offline| SQL
+    end
+
+    Frontend -->|JWT Bearer / REST API| M
+    E --> DB_Check
+    F --> DB_Check
+```
 
 ## Key Capabilities & Governance Modules
 
@@ -155,6 +158,87 @@ A complete API execution studio directly inside the platform for testing microse
 
 ## Data Models & Entity Relationship Schema
 ### Schema Model Definitions
+## Data Models & Entity Relationship Schema
+
+```mermaid
+erDiagram
+    User ||--o{ Task : "assigned to"
+    User ||--o{ ActivityLog : "performs action"
+    User ||--o{ Comment : "authors"
+    User ||--o{ FileItem : "uploads"
+    
+    Project ||--|{ ProjectPhase : "contains stages"
+    Project ||--o{ ActivityLog : "tracks"
+    
+    ProjectPhase ||--o{ Task : "groups"
+    ProjectPhase ||--o{ FileItem : "stores"
+    
+    Task ||--o{ Comment : "has discussion"
+    Task ||--o{ ActivityLog : "records changes"
+
+    User {
+        int id PK
+        string name
+        string email UK
+        string department
+        string role
+        string status
+    }
+
+    Project {
+        int id PK
+        string code
+        string name
+        string description
+        string status
+    }
+
+    ProjectPhase {
+        int id PK
+        int project_id FK
+        string name
+        string governing_dept
+        int sequence_order
+    }
+
+    Task {
+        int id PK
+        int phase_id FK
+        int assigned_to FK
+        string title
+        string status
+        string priority
+        json checklist
+    }
+
+    ActivityLog {
+        int id PK
+        int user_id FK
+        int project_id FK
+        int task_id FK
+        string action_type
+        string details
+        datetime timestamp
+    }
+
+    Comment {
+        int id PK
+        int task_id FK
+        int user_id FK
+        string message
+        datetime timestamp
+    }
+
+    FileItem {
+        int id PK
+        int phase_id FK
+        int user_id FK
+        string filename
+        string file_path
+        boolean is_folder
+        int parent_id FK
+    }
+```
 
 * **`User`**: Core identity table storing encrypted passwords, department assignments, and RBAC tiers (`SUPER_ADMIN`, `DEPT_HEAD`, `TEAM_MEMBER`).
 * **`Project`**: Master entity for corporate systems (e.g., `Core Banking Ledger System Migration`).
@@ -226,6 +310,55 @@ A complete API execution studio directly inside the platform for testing microse
 
 ## Project Directory File Tree
 ---
+```text
+bahl-sdlc-platform/
+│
+├── backend/
+│   ├── app.py                      # Flask Application entry point and router configuration
+│   ├── config.py                   # Environment settings and database connection logic
+│   ├── models.py                   # SQLAlchemy schema models (User, Task, AuditLog, etc.)
+│   ├── middleware.py               # RBAC and stage boundary validation guards
+│   ├── requirements.txt            # Python dependencies
+│   ├── test_suite.py               # End-to-end verification and API proxy tests
+│   │
+│   ├── routes/
+│   │   ├── auth_routes.py          # Registration, login, profile, and password routes
+│   │   ├── admin_routes.py         # Directory management and user approval endpoints
+│   │   ├── project_routes.py       # Projects, phases, and stage configuration routes
+│   │   ├── task_routes.py          # Task CRUD and column movement endpoints
+│   │   ├── file_routes.py          # Stage file tree and document upload routes
+│   │   ├── audit_routes.py         # Regulatory activity log query endpoints
+│   │   └── proxy_routes.py         # Chained API Studio backend CORS proxy runner
+│   │
+│   └── uploads/                    # Local storage folder for uploaded stage files
+│
+└── frontend/
+    ├── package.json                # Frontend dependencies and Vite scripts
+    ├── vite.config.js              # Vite bundler configuration and dev-server proxies
+    ├── tailwind.config.js          # Tailwind CSS 4 theme rules and color palettes
+    ├── index.html                  # HTML entry point
+    │
+    └── src/
+        ├── main.jsx                # React runtime bootstrap
+        ├── App.jsx                 # Top-level router, theme provider, and auth wrapper
+        │
+        ├── components/
+        │   ├── Navbar.jsx          # Corporate header with project selector and theme toggle
+        │   ├── KanbanBoard.jsx     # Drag-and-drop workspace with column management
+        │   ├── TaskCard.jsx        # Individual task item with priority indicators
+        │   ├── TaskModal.jsx       # Modal for task details, checklists, and comments
+        │   ├── StageFileTree.jsx   # Nested folder and file explorer per stage
+        │   ├── ActivityAudit.jsx   # Regulatory audit log stream
+        │   ├── AdminConsole.jsx    # User directory, approval buttons, and role selectors
+        │   └── ApiStudio.jsx       # Insomnia-style API runner with chained step support
+        │
+        ├── context/
+        │   ├── AuthContext.jsx     # Authentication state, login, and active user context
+        │   └── ThemeContext.jsx    # Global light and dark mode state provider
+        │
+        └── services/
+            └── api.js              # Axios HTTP interceptors and API service helpers
+```
 
 ## Installation & Running Guide
 

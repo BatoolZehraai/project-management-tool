@@ -53,9 +53,6 @@ Standard project management tools fail within regulated financial environments d
 ## System Architecture
 
 The platform uses a decoupled client-server architecture with an intelligent dual-engine persistence layer.
-## System Architecture
-
-The platform uses a decoupled client-server architecture with an intelligent dual-engine persistence layer.
 
 ```mermaid
 graph TD
@@ -156,8 +153,6 @@ A complete API execution studio directly inside the platform for testing microse
 
 ---
 
-## Data Models & Entity Relationship Schema
-### Schema Model Definitions
 ## Data Models & Entity Relationship Schema
 
 ```mermaid
@@ -402,15 +397,15 @@ export PORT=5000
 # 5. Start the Flask server
 python app.py
 The Flask backend will start on http://localhost:5000 with the REST API served under /api/*.
-
-Frontend Setup
+```
+### Frontend Setup
 Prerequisites
 Node.js (v18.x, v20.x, or newer)
 
 npm or yarn
 
-Installation Steps
-Bash
+### Installation Steps
+``` Bash
 # 1. Navigate to the frontend directory
 cd frontend
 
@@ -422,3 +417,4 @@ npm run dev
 # Run tests inside the backend environment
 cd backend
 python test_suite.py
+```

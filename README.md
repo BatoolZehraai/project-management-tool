@@ -54,6 +54,37 @@ Standard project management tools fail within regulated financial environments d
 
 The platform uses a decoupled client-server architecture with an intelligent dual-engine persistence layer.
 ---
++---------------------------------------------------------------------------------------+
+|                                    PRESENTATION LAYER                                 |
+|               Vite + React 19 Single Page Application (SPA) + Tailwind CSS 4          |
+|                                                                                       |
+|   +-------------------+  +-------------------+  +-------------------+  +----------+   |
+|   |  Stage Kanban     |  | Stage File Tree   |  | API Studio Runner |  | Admin    |   |
+|   |  (RBAC Guarded)   |  | (Folder Explorer) |  | (2-Step Chaining) |  | Directory|   |
+|   +-------------------+  +-------------------+  +-------------------+  +----------+   |
+|             |                      |                      |                 |         |
+|             +----------------------+----------------------+-----------------+         |
+|                                    | (JWT Bearer / Axios / Fetch)                     |
++------------------------------------|--------------------------------------------------+
+|
+v
++---------------------------------------------------------------------------------------+
+|                                   APPLICATION LAYER                                   |
+|                             Flask 3.0 REST Framework (Python)                         |
+|                                                                                       |
+|   +-------------------------------------------------------------------------------+   |
+|   |              Security, Auth & Boundary Middleware (@require_auth)             |   |
+|   |    - JWT Verification      - Stage Ownership Engine     - RBAC Policy Matrix  |   |
+|   +-------------------------------------------------------------------------------+   |
+|          |                         |                           |                      |
+|          v                         v                           v                      |
+|   +--------------+         +---------------+           +--------------------+         |
+|   |  SDLC Stages |         | Regulatory    |           | Server-Side CORS   |         |
+|   |  & Tasks API |         | Audit Service |           | Proxy Runner       |         |
+|   +--------------+         +---------------+           +--------------------+         |
++------------------------------------|--------------------------------------------------+
+|
+v
 
 ## Key Capabilities & Governance Modules
 

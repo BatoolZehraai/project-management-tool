@@ -10,10 +10,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+import json
 import jwt
 import requests
 
-from models import db, User, Project, ProjectPhase, Task, Comment, AuditLog, FileItem, ActivityLog
+from models import db, User, Project, ProjectPhase, Task, Comment, AuditLog, FileItem, ActivityLog, Bug, ApiEnvironment, ApiPipeline
 from config import Config
 
 app = Flask(__name__)
@@ -101,16 +102,19 @@ def can_modify_stage_task(user, phase):
 # ----------------- DB Initialization & Schema Auto-Migration -----------------
 
 def migrate_database_schema():
-    """Ensure database columns exist without dropping tables."""
+    """Ensure database columns and tables exist without dropping existing data."""
     with app.app_context():
         try:
+            db.create_all()
             from sqlalchemy import text
             col_stmts = [
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(100) DEFAULT 'Software Engineering'",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(300)",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30)",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio VARCHAR(250)",
-                "ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS governing_department VARCHAR(100)"
+                "ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS governing_department VARCHAR(100)",
+                "ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS bug_id INTEGER",
+                "ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS bug_title VARCHAR(150)"
             ]
             with db.engine.connect() as conn:
                 for stmt in col_stmts:
@@ -263,6 +267,72 @@ def seed_data():
             )
             db.session.add(log)
             db.session.commit()
+
+        # Seed initial sample bugs if none exist
+        if not Bug.query.first():
+            project = Project.query.first()
+            if project and project.phases:
+                qa_phase = next((ph for ph in project.phases if 'QA' in (ph.governing_department or ph.name)), project.phases[-1])
+                dev_phase = next((ph for ph in project.phases if 'Software' in (ph.governing_department or ph.name)), project.phases[0])
+                dev_task = Task.query.filter_by(project_id=project.id).first()
+                admin_user = User.query.filter_by(email='admin' + INTERNAL_DOMAIN).first()
+                admin_id = admin_user.id if admin_user else None
+                
+                b1 = Bug(
+                    project_id=project.id,
+                    phase_id=qa_phase.id,
+                    task_id=dev_task.id if dev_task else None,
+                    title="ISO 20022 Pacs.008 XML Parser Buffer Overflow Vulnerability",
+                    description="High throughput stress testing triggers memory buffer overflow when parsing nested Pacs.008 customer credit transfers with custom remittance information.",
+                    severity="CRITICAL",
+                    status="IN_PROGRESS",
+                    reported_by_id=admin_id,
+                    assigned_to_id=admin_id
+                )
+                b2 = Bug(
+                    project_id=project.id,
+                    phase_id=dev_phase.id,
+                    task_id=dev_task.id if dev_task else None,
+                    title="Database Transaction Timeout during Double-Entry Ledger Rollback",
+                    description="Lock contention on account balance table causes 504 gateway timeout when performing concurrent rollbacks across distributed nodes.",
+                    severity="HIGH",
+                    status="RESOLVED",
+                    reported_by_id=admin_id,
+                    assigned_to_id=admin_id
+                )
+                b3 = Bug(
+                    project_id=project.id,
+                    phase_id=qa_phase.id,
+                    title="JWT Access Token Signature Verification Clock Skew Tolerance",
+                    description="Token validation strictly enforces exact expiry without standard 60-second clock skew tolerance on cluster boundary nodes.",
+                    severity="MEDIUM",
+                    status="VERIFIED",
+                    reported_by_id=admin_id,
+                    assigned_to_id=admin_id
+                )
+                db.session.add_all([b1, b2, b3])
+                db.session.commit()
+                
+                if admin_user:
+                    for b, prev, nxt, act in [
+                        (b1, "NEW", "IN_PROGRESS", "Dev started investigation and heap buffer patch"),
+                        (b2, "IN_PROGRESS", "RESOLVED", "Dev implemented distributed lock retry mechanism"),
+                        (b3, "RESOLVED", "VERIFIED", "QA verified clock skew tolerance across test environments")
+                    ]:
+                        db.session.add(ActivityLog(
+                            project_id=project.id,
+                            bug_id=b.id,
+                            user_id=admin_user.id,
+                            user_name=admin_user.name,
+                            user_email=admin_user.email,
+                            user_role=admin_user.role,
+                            action_type='BUG_STATUS_CHANGE',
+                            bug_title=b.title,
+                            details=f"{act} by {admin_user.name} ({admin_user.role})",
+                            previous_state=prev,
+                            new_state=nxt
+                        ))
+                    db.session.commit()
 
 init_database_environment()
 # seed_data() will be run when the app starts directly or during migrations
@@ -769,6 +839,256 @@ def proxy_execute():
             'data': {'error': str(e)},
             'is_json': True
         }), 200
+
+# ----------------- PROJECT-SCOPED API STUDIO & PERSISTENCE -----------------
+
+DEFAULT_PIPELINE_STEPS = [
+    {
+        "id": "step_1",
+        "name": "1. Authenticate & Obtain Dynamic Token",
+        "method": "POST",
+        "url": "{{baseUrl}}/auth/login",
+        "headers": [
+            { "id": "h1", "enabled": True, "key": "Content-Type", "value": "application/json" },
+            { "id": "h2", "enabled": True, "key": "Accept", "value": "application/json" }
+        ],
+        "params": [],
+        "body": json.dumps({
+            "email": "{{adminEmail}}",
+            "password": "{{adminPassword}}"
+        }, indent=2),
+        "extractionRules": [
+            { "id": "ex1", "targetVar": "step1_token", "sourcePath": "token", "description": "JWT Token for Downstream Authorization" }
+        ]
+    },
+    {
+        "id": "step_2",
+        "name": "2. Query Corporate User Directory (Downstream)",
+        "method": "GET",
+        "url": "{{baseUrl}}/admin/users",
+        "headers": [
+            { "id": "h1", "enabled": True, "key": "Authorization", "value": "Bearer {{step1_token}}" },
+            { "id": "h2", "enabled": True, "key": "Accept", "value": "application/json" }
+        ],
+        "params": [
+            { "id": "p1", "enabled": True, "key": "status", "value": "APPROVED" }
+        ],
+        "body": "",
+        "extractionRules": []
+    }
+]
+
+DEFAULT_PROJECT_ENVIRONMENTS = [
+    {
+        "name": "Local Backend",
+        "is_default": True,
+        "variables": [
+            { "key": "baseUrl", "value": "http://127.0.0.1:5000/api" },
+            { "key": "adminEmail", "value": "admin@bankalhabib.com" },
+            { "key": "adminPassword", "value": "Admin123!" },
+            { "key": "department", "value": "Software Engineering" }
+        ]
+    },
+    {
+        "name": "Development (Sandbox)",
+        "is_default": False,
+        "variables": [
+            { "key": "baseUrl", "value": "https://dev-api.bankalhabib.com/api" },
+            { "key": "apiKey", "value": "bahl_dev_sec_991823" },
+            { "key": "adminEmail", "value": "dev.lead@bankalhabib.com" }
+        ]
+    },
+    {
+        "name": "Staging (UAT)",
+        "is_default": False,
+        "variables": [
+            { "key": "baseUrl", "value": "https://staging-api.bankalhabib.com/api" },
+            { "key": "apiKey", "value": "bahl_stg_sec_772183" }
+        ]
+    },
+    {
+        "name": "Production (Live)",
+        "is_default": False,
+        "variables": [
+            { "key": "baseUrl", "value": "https://api.bankalhabib.com/api" },
+            { "key": "apiKey", "value": "bahl_prod_sec_001923" }
+        ]
+    }
+]
+
+@app.route('/api/projects/<int:project_id>/api-environments', methods=['GET'])
+@token_required
+def get_project_api_environments(current_user, project_id):
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+
+    envs = ApiEnvironment.query.filter_by(project_id=project_id).order_by(ApiEnvironment.id.asc()).all()
+    if not envs:
+        # Initialize default environments for this project
+        for env_def in DEFAULT_PROJECT_ENVIRONMENTS:
+            new_env = ApiEnvironment(
+                project_id=project_id,
+                name=env_def['name'],
+                variables_json=json.dumps(env_def['variables']),
+                is_default=env_def.get('is_default', False)
+            )
+            db.session.add(new_env)
+        db.session.commit()
+        envs = ApiEnvironment.query.filter_by(project_id=project_id).order_by(ApiEnvironment.id.asc()).all()
+
+    return jsonify([env.to_dict() for env in envs])
+
+
+@app.route('/api/projects/<int:project_id>/api-environments', methods=['POST'])
+@token_required
+def create_project_api_environment(current_user, project_id):
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+
+    data = request.json or {}
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'error': 'Environment name is required'}), 400
+
+    variables = data.get('variables', [])
+    if not isinstance(variables, list):
+        variables = []
+
+    is_default = bool(data.get('is_default', False))
+    if is_default:
+        ApiEnvironment.query.filter_by(project_id=project_id).update({'is_default': False})
+
+    new_env = ApiEnvironment(
+        project_id=project_id,
+        name=name,
+        variables_json=json.dumps(variables),
+        is_default=is_default
+    )
+    db.session.add(new_env)
+    db.session.commit()
+
+    return jsonify(new_env.to_dict()), 201
+
+
+@app.route('/api/projects/<int:project_id>/api-environments/<int:env_id>', methods=['PUT'])
+@token_required
+def update_project_api_environment(current_user, project_id, env_id):
+    env = ApiEnvironment.query.filter_by(project_id=project_id, id=env_id).first()
+    if not env:
+        return jsonify({'error': 'Environment not found'}), 404
+
+    data = request.json or {}
+    if 'name' in data:
+        name = str(data['name']).strip()
+        if name:
+            env.name = name
+
+    if 'variables' in data and isinstance(data['variables'], list):
+        env.variables_json = json.dumps(data['variables'])
+
+    if 'is_default' in data:
+        is_default = bool(data['is_default'])
+        if is_default:
+            ApiEnvironment.query.filter_by(project_id=project_id).update({'is_default': False})
+        env.is_default = is_default
+
+    env.updated_at = datetime.datetime.utcnow()
+    db.session.commit()
+
+    return jsonify(env.to_dict())
+
+
+@app.route('/api/projects/<int:project_id>/api-environments/<int:env_id>', methods=['DELETE'])
+@token_required
+def delete_project_api_environment(current_user, project_id, env_id):
+    env = ApiEnvironment.query.filter_by(project_id=project_id, id=env_id).first()
+    if not env:
+        return jsonify({'error': 'Environment not found'}), 404
+
+    db.session.delete(env)
+    db.session.commit()
+
+    return jsonify({'message': f"Environment '{env.name}' deleted successfully."})
+
+
+@app.route('/api/projects/<int:project_id>/api-pipeline', methods=['GET'])
+@token_required
+def get_project_api_pipeline(current_user, project_id):
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+
+    pipeline = ApiPipeline.query.filter_by(project_id=project_id).first()
+    if not pipeline or not pipeline.steps_json or pipeline.steps_json == '[]':
+        if not pipeline:
+            pipeline = ApiPipeline(
+                project_id=project_id,
+                name='Main Chained Pipeline',
+                steps_json=json.dumps(DEFAULT_PIPELINE_STEPS)
+            )
+            db.session.add(pipeline)
+        else:
+            pipeline.steps_json = json.dumps(DEFAULT_PIPELINE_STEPS)
+        db.session.commit()
+
+    return jsonify(pipeline.to_dict())
+
+
+@app.route('/api/projects/<int:project_id>/api-pipeline', methods=['PUT'])
+@token_required
+def update_project_api_pipeline(current_user, project_id):
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+
+    data = request.json or {}
+    steps = data.get('steps', [])
+    if not isinstance(steps, list):
+        return jsonify({'error': 'Steps must be an array'}), 400
+
+    name = data.get('name', 'Main Chained Pipeline')
+
+    pipeline = ApiPipeline.query.filter_by(project_id=project_id).first()
+    if not pipeline:
+        pipeline = ApiPipeline(
+            project_id=project_id,
+            name=name,
+            steps_json=json.dumps(steps)
+        )
+        db.session.add(pipeline)
+    else:
+        pipeline.name = name
+        pipeline.steps_json = json.dumps(steps)
+        pipeline.updated_at = datetime.datetime.utcnow()
+
+    db.session.commit()
+    return jsonify(pipeline.to_dict())
+
+
+@app.route('/api/projects/<int:project_id>/api-pipeline/reset', methods=['POST'])
+@token_required
+def reset_project_api_pipeline(current_user, project_id):
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+
+    pipeline = ApiPipeline.query.filter_by(project_id=project_id).first()
+    if not pipeline:
+        pipeline = ApiPipeline(
+            project_id=project_id,
+            name='Main Chained Pipeline',
+            steps_json=json.dumps(DEFAULT_PIPELINE_STEPS)
+        )
+        db.session.add(pipeline)
+    else:
+        pipeline.steps_json = json.dumps(DEFAULT_PIPELINE_STEPS)
+        pipeline.updated_at = datetime.datetime.utcnow()
+
+    db.session.commit()
+    return jsonify(pipeline.to_dict())
+
 
 # ----------------- PROJECTS & DYNAMIC PHASES -----------------
 
@@ -1589,6 +1909,346 @@ def delete_file_item(current_user, file_id):
     db.session.commit()
 
     return jsonify({'message': f"{'Folder' if is_folder else 'File'} deleted successfully."}), 200
+
+# ----------------- ENTERPRISE DEFECT & BUG TRACKING -----------------
+
+VALID_BUG_SEVERITIES = {'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'}
+VALID_BUG_STATUSES = {'NEW', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED', 'VERIFIED', 'CLOSED', 'REOPENED'}
+
+VALID_BUG_TRANSITIONS = {
+    'NEW': {'ASSIGNED', 'IN_PROGRESS'},
+    'ASSIGNED': {'IN_PROGRESS', 'NEW', 'RESOLVED'},
+    'IN_PROGRESS': {'RESOLVED', 'ASSIGNED'},
+    'RESOLVED': {'VERIFIED', 'CLOSED', 'REOPENED'},
+    'VERIFIED': {'CLOSED', 'REOPENED', 'IN_PROGRESS'},
+    'CLOSED': {'REOPENED'},
+    'REOPENED': {'ASSIGNED', 'IN_PROGRESS'}
+}
+
+@app.route('/api/projects/<int:project_id>/bugs', methods=['GET'])
+@token_required
+def get_project_bugs(current_user, project_id):
+    """
+    Retrieve bugs/defects for a given project with multi-dimensional filtering.
+    """
+    project = Project.query.get(project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+        
+    query = Bug.query.filter_by(project_id=project_id)
+    
+    # Optional query filters
+    severity = request.args.get('severity', '').strip().upper()
+    if severity and severity in VALID_BUG_SEVERITIES:
+        query = query.filter_by(severity=severity)
+        
+    status = request.args.get('status', '').strip().upper()
+    if status and status in VALID_BUG_STATUSES:
+        query = query.filter_by(status=status)
+        
+    phase_id = request.args.get('phase_id', type=int)
+    if phase_id:
+        query = query.filter_by(phase_id=phase_id)
+        
+    assigned_to = request.args.get('assigned_to', type=int)
+    if assigned_to:
+        query = query.filter_by(assigned_to_id=assigned_to)
+
+    search = request.args.get('search', '').strip()
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.filter(
+            (Bug.title.ilike(search_pattern)) | 
+            (Bug.description.ilike(search_pattern))
+        )
+        
+    bugs = query.order_by(
+        db.case(
+            (Bug.severity == 'CRITICAL', 1),
+            (Bug.severity == 'HIGH', 2),
+            (Bug.severity == 'MEDIUM', 3),
+            (Bug.severity == 'LOW', 4),
+            else_=5
+        ),
+        Bug.created_at.desc()
+    ).all()
+    
+    return jsonify([b.to_dict() for b in bugs])
+
+
+@app.route('/api/phases/<int:phase_id>/bugs', methods=['POST'])
+@token_required
+def report_bug(current_user, phase_id):
+    """
+    Report a new defect linked to an SDLC phase/governance boundary.
+    """
+    phase = ProjectPhase.query.get(phase_id)
+    if not phase:
+        return jsonify({'error': 'SDLC Phase not found'}), 404
+        
+    data = request.json or {}
+    title = data.get('title', '').strip()
+    if not title:
+        return jsonify({'error': 'Defect title is required'}), 400
+        
+    description = data.get('description', '').strip()
+    severity = data.get('severity', 'MEDIUM').strip().upper()
+    if severity not in VALID_BUG_SEVERITIES:
+        severity = 'MEDIUM'
+        
+    task_id = data.get('task_id')
+    if task_id:
+        task = Task.query.get(task_id)
+        if not task or task.project_id != phase.project_id:
+            task_id = None
+            
+    assigned_to_id = data.get('assigned_to_id')
+    assigned_user = None
+    if assigned_to_id:
+        assigned_user = User.query.get(assigned_to_id)
+        if not assigned_user:
+            assigned_to_id = None
+
+    initial_status = 'ASSIGNED' if assigned_to_id else 'NEW'
+    
+    bug = Bug(
+        project_id=phase.project_id,
+        phase_id=phase.id,
+        task_id=task_id,
+        title=title,
+        description=description,
+        severity=severity,
+        status=initial_status,
+        reported_by_id=current_user.id,
+        assigned_to_id=assigned_to_id
+    )
+    db.session.add(bug)
+    db.session.flush()
+    
+    # Audit log creation
+    audit = ActivityLog(
+        project_id=phase.project_id,
+        bug_id=bug.id,
+        user_id=current_user.id,
+        user_name=current_user.name,
+        user_email=current_user.email,
+        user_role=current_user.role,
+        action_type='BUG_REPORTED',
+        bug_title=bug.title,
+        details=f"Reported {severity} defect '{title}' in phase '{phase.name}'" + (f" assigned to {assigned_user.name}" if assigned_user else ""),
+        previous_state=None,
+        new_state=initial_status
+    )
+    db.session.add(audit)
+    db.session.commit()
+    
+    return jsonify(bug.to_dict()), 201
+
+
+@app.route('/api/bugs/<int:bug_id>/status', methods=['PATCH'])
+@token_required
+def update_bug_status(current_user, bug_id):
+    """
+    Transition a defect's lifecycle status with strict state machine and RBAC governance.
+    """
+    bug = Bug.query.get(bug_id)
+    if not bug:
+        return jsonify({'error': 'Defect not found'}), 404
+        
+    data = request.json or {}
+    new_status = str(data.get('status', '')).strip().upper()
+    comment = str(data.get('comment', '')).strip()
+    assigned_to_id = data.get('assigned_to_id')
+    override = bool(data.get('override', False)) and current_user.role in ['SUPER_ADMIN', 'Admin']
+    
+    if not new_status or new_status not in VALID_BUG_STATUSES:
+        return jsonify({'error': f'Invalid status. Allowed values: {", ".join(sorted(VALID_BUG_STATUSES))}'}), 400
+        
+    current_status = bug.status
+    if current_status == new_status and assigned_to_id is None:
+        return jsonify(bug.to_dict())
+
+    # State Transition Graph Validation
+    valid_targets = VALID_BUG_TRANSITIONS.get(current_status, set())
+    if not override and new_status != current_status and new_status not in valid_targets:
+        return jsonify({
+            'error': f"Invalid state transition: Cannot move from '{current_status}' to '{new_status}'. Allowed transitions: {', '.join(sorted(valid_targets)) if valid_targets else 'None'}"
+        }), 400
+
+    # Role-Based Transition Governance Rules
+    is_super_admin = current_user.role in ['SUPER_ADMIN', 'Admin']
+    user_dept = (current_user.department or '').strip().lower()
+    is_qa = 'qa' in user_dept or 'quality' in user_dept
+    is_reporter = bug.reported_by_id == current_user.id
+    is_assignee = bug.assigned_to_id == current_user.id
+    is_dev = 'software' in user_dept or 'engineering' in user_dept or 'developer' in user_dept or is_assignee
+
+    if not is_super_admin:
+        # QA / Reporter restricted transitions: VERIFIED, CLOSED, REOPENED
+        if new_status in ['VERIFIED', 'CLOSED', 'REOPENED']:
+            if not (is_qa or is_reporter):
+                return jsonify({
+                    'error': f"Permission denied: Only QA Engineers or the Defect Reporter can transition defects to '{new_status}'."
+                }), 403
+                
+        # Developer restricted transitions: ASSIGNED -> IN_PROGRESS -> RESOLVED
+        if new_status in ['IN_PROGRESS', 'RESOLVED'] and not (is_dev or is_qa or is_reporter):
+            return jsonify({
+                'error': f"Permission denied: Only assigned Developers or QA can transition defects to '{new_status}'."
+            }), 403
+
+    # Update assignee if provided
+    old_assignee_name = bug.assigned_to.name if bug.assigned_to else "Unassigned"
+    new_assigned_user = None
+    if assigned_to_id is not None:
+        if assigned_to_id == 0 or assigned_to_id == "":
+            bug.assigned_to_id = None
+        else:
+            new_assigned_user = User.query.get(assigned_to_id)
+            if new_assigned_user:
+                bug.assigned_to_id = new_assigned_user.id
+
+    bug.status = new_status
+    bug.updated_at = datetime.datetime.utcnow()
+    
+    # Audit log
+    detail_parts = [f"Status changed from {current_status} to {new_status} by {current_user.name} ({current_user.role})"]
+    if new_assigned_user and old_assignee_name != new_assigned_user.name:
+        detail_parts.append(f"Reassigned from {old_assignee_name} to {new_assigned_user.name}")
+    if comment:
+        detail_parts.append(f"Notes: {comment}")
+    if override:
+        detail_parts.append("[Super Admin Master Override]")
+
+    audit = ActivityLog(
+        project_id=bug.project_id,
+        bug_id=bug.id,
+        user_id=current_user.id,
+        user_name=current_user.name,
+        user_email=current_user.email,
+        user_role=current_user.role,
+        action_type='BUG_STATUS_CHANGE',
+        bug_title=bug.title,
+        details=". ".join(detail_parts),
+        previous_state=current_status,
+        new_state=new_status
+    )
+    db.session.add(audit)
+    db.session.commit()
+    
+    return jsonify(bug.to_dict())
+
+
+@app.route('/api/bugs/<int:bug_id>/history', methods=['GET'])
+@token_required
+def get_bug_history(current_user, bug_id):
+    """
+    Retrieve full chronological audit timeline for a defect.
+    """
+    bug = Bug.query.get(bug_id)
+    if not bug:
+        return jsonify({'error': 'Defect not found'}), 404
+        
+    activities = ActivityLog.query.filter_by(bug_id=bug_id).order_by(ActivityLog.created_at.asc()).all()
+    return jsonify([a.to_dict() for a in activities])
+
+
+@app.route('/api/bugs/<int:bug_id>', methods=['GET'])
+@token_required
+def get_bug_details(current_user, bug_id):
+    bug = Bug.query.get(bug_id)
+    if not bug:
+        return jsonify({'error': 'Defect not found'}), 404
+    return jsonify(bug.to_dict())
+
+
+@app.route('/api/bugs/<int:bug_id>', methods=['PUT'])
+@token_required
+def update_bug(current_user, bug_id):
+    bug = Bug.query.get(bug_id)
+    if not bug:
+        return jsonify({'error': 'Defect not found'}), 404
+        
+    data = request.json or {}
+    title = data.get('title', '').strip()
+    if title:
+        bug.title = title
+    if 'description' in data:
+        bug.description = data.get('description')
+    severity = data.get('severity', '').strip().upper()
+    if severity in VALID_BUG_SEVERITIES:
+        bug.severity = severity
+    if 'assigned_to_id' in data:
+        assigned_id = data.get('assigned_to_id')
+        if assigned_id == 0 or not assigned_id:
+            bug.assigned_to_id = None
+        else:
+            u = User.query.get(assigned_id)
+            if u:
+                bug.assigned_to_id = u.id
+    if 'task_id' in data:
+        t_id = data.get('task_id')
+        if t_id == 0 or not t_id:
+            bug.task_id = None
+        else:
+            t = Task.query.get(t_id)
+            if t and t.project_id == bug.project_id:
+                bug.task_id = t.id
+
+    bug.updated_at = datetime.datetime.utcnow()
+    
+    audit = ActivityLog(
+        project_id=bug.project_id,
+        bug_id=bug.id,
+        user_id=current_user.id,
+        user_name=current_user.name,
+        user_email=current_user.email,
+        user_role=current_user.role,
+        action_type='BUG_UPDATED',
+        bug_title=bug.title,
+        details=f"Updated defect details by {current_user.name}",
+        previous_state=bug.status,
+        new_state=bug.status
+    )
+    db.session.add(audit)
+    db.session.commit()
+    
+    return jsonify(bug.to_dict())
+
+
+@app.route('/api/bugs/<int:bug_id>', methods=['DELETE'])
+@token_required
+def delete_bug(current_user, bug_id):
+    bug = Bug.query.get(bug_id)
+    if not bug:
+        return jsonify({'error': 'Defect not found'}), 404
+        
+    is_super_admin = current_user.role in ['SUPER_ADMIN', 'Admin']
+    is_reporter = bug.reported_by_id == current_user.id
+    if not (is_super_admin or is_reporter):
+        return jsonify({'error': 'Permission denied: Only Super Admins or the Reporter can delete defects.'}), 403
+        
+    title = bug.title
+    p_id = bug.project_id
+    
+    audit = ActivityLog(
+        project_id=p_id,
+        user_id=current_user.id,
+        user_name=current_user.name,
+        user_email=current_user.email,
+        user_role=current_user.role,
+        action_type='BUG_DELETED',
+        bug_title=title,
+        details=f"Defect '{title}' was deleted by {current_user.name}",
+        previous_state=bug.status,
+        new_state='DELETED'
+    )
+    db.session.add(audit)
+    db.session.delete(bug)
+    db.session.commit()
+    
+    return jsonify({'message': f"Defect '{title}' deleted successfully"})
+
 
 # ----------------- SYSTEM DATABASE RESET -----------------
 

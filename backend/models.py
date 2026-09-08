@@ -212,18 +212,80 @@ class FileItem(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
+class Bug(db.Model):
+    __tablename__ = 'bugs'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id', ondelete='CASCADE'), nullable=False, index=True)
+    phase_id = db.Column(db.Integer, db.ForeignKey('project_phases.id', ondelete='CASCADE'), nullable=False, index=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('project_tasks.id', ondelete='SET NULL'), nullable=True)
+    title = db.Column(db.String(150), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    severity = db.Column(db.String(20), nullable=False, default='MEDIUM')  # CRITICAL, HIGH, MEDIUM, LOW
+    status = db.Column(db.String(20), nullable=False, default='NEW')  # NEW, ASSIGNED, IN_PROGRESS, RESOLVED, VERIFIED, CLOSED, REOPENED
+    reported_by_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    assigned_to_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Explicit relationships
+    project = db.relationship('Project', backref=db.backref('bugs', cascade='all, delete-orphan'))
+    phase = db.relationship('ProjectPhase', backref=db.backref('bugs', cascade='all, delete-orphan'))
+    task = db.relationship('Task', backref=db.backref('bugs', cascade='all, delete-orphan'))
+    reported_by = db.relationship('User', foreign_keys=[reported_by_id], backref='reported_bugs')
+    assigned_to = db.relationship('User', foreign_keys=[assigned_to_id], backref='assigned_bugs')
+    activities = db.relationship('ActivityLog', backref='bug', cascade='all, delete-orphan', order_by='ActivityLog.created_at.asc()')
+
+    @property
+    def bug_code(self):
+        return f'BUG-{self.id:03d}' if self.id else 'BUG-NEW'
+
+    def to_dict(self):
+        phase_name = self.phase.name if self.phase else None
+        gov_dept = None
+        if self.phase:
+            gov_dept = self.phase.governing_department or self.phase.role_access
+        
+        return {
+            'id': self.id,
+            'bug_code': f'BUG-{self.id:03d}',
+            'project_id': self.project_id,
+            'phase_id': self.phase_id,
+            'phase_name': phase_name,
+            'governing_department': gov_dept,
+            'task_id': self.task_id,
+            'task_title': self.task.title if self.task else None,
+            'title': self.title,
+            'description': self.description,
+            'severity': self.severity,
+            'status': self.status,
+            'reported_by_id': self.reported_by_id,
+            'reported_by_name': self.reported_by.name if self.reported_by else 'Unknown Reporter',
+            'reported_by_email': self.reported_by.email if self.reported_by else None,
+            'reported_by_dept': self.reported_by.department if self.reported_by else None,
+            'assigned_to_id': self.assigned_to_id,
+            'assigned_to_name': self.assigned_to.name if self.assigned_to else 'Unassigned',
+            'assigned_to_email': self.assigned_to.email if self.assigned_to else None,
+            'assigned_to_dept': self.assigned_to.department if self.assigned_to else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'history_count': len(self.activities)
+        }
+
 class ActivityLog(db.Model):
     __tablename__ = 'activity_logs'
     
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey('projects.id', ondelete='CASCADE'), nullable=False, index=True)
     task_id = db.Column(db.Integer, db.ForeignKey('project_tasks.id', ondelete='SET NULL'), nullable=True)
+    bug_id = db.Column(db.Integer, db.ForeignKey('bugs.id', ondelete='CASCADE'), nullable=True, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     user_name = db.Column(db.String(100), nullable=False)
     user_email = db.Column(db.String(120), nullable=False)
     user_role = db.Column(db.String(50), nullable=False)
-    action_type = db.Column(db.String(50), nullable=False)  # CREATE_TASK, STATUS_CHANGE, STAGE_SHIFT, UPDATE_TASK, REASSIGN_TASK, DELETE_TASK
+    action_type = db.Column(db.String(50), nullable=False)  # CREATE_TASK, STATUS_CHANGE, STAGE_SHIFT, UPDATE_TASK, REASSIGN_TASK, DELETE_TASK, BUG_REPORTED, BUG_STATUS_CHANGE, BUG_ASSIGNED, BUG_UPDATED
     task_title = db.Column(db.String(150), nullable=True)
+    bug_title = db.Column(db.String(150), nullable=True)
     details = db.Column(db.Text, nullable=False)
     previous_state = db.Column(db.Text, nullable=True)
     new_state = db.Column(db.Text, nullable=True)
@@ -234,14 +296,74 @@ class ActivityLog(db.Model):
             'id': self.id,
             'project_id': self.project_id,
             'task_id': self.task_id,
+            'bug_id': self.bug_id,
             'user_id': self.user_id,
             'user_name': self.user_name,
             'user_email': self.user_email,
             'user_role': self.user_role,
             'action_type': self.action_type,
             'task_title': self.task_title,
+            'bug_title': self.bug_title,
             'details': self.details,
             'previous_state': self.previous_state,
             'new_state': self.new_state,
             'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+class ApiEnvironment(db.Model):
+    __tablename__ = 'api_environments'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id', ondelete='CASCADE'), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    variables_json = db.Column(db.Text, default='[]')  # JSON array of {key, value}
+    is_default = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    project = db.relationship('Project', backref=db.backref('api_environments', cascade='all, delete-orphan'))
+
+    def to_dict(self):
+        import json
+        vars_list = []
+        try:
+            vars_list = json.loads(self.variables_json) if self.variables_json else []
+        except Exception:
+            vars_list = []
+        return {
+            'id': self.id,
+            'project_id': self.project_id,
+            'name': self.name,
+            'variables': vars_list,
+            'is_default': self.is_default,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+class ApiPipeline(db.Model):
+    __tablename__ = 'api_pipelines'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id', ondelete='CASCADE'), nullable=False, unique=True, index=True)
+    name = db.Column(db.String(100), default='Main Chained Pipeline')
+    steps_json = db.Column(db.Text, default='[]')  # JSON array of step objects
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    project = db.relationship('Project', backref=db.backref('api_pipeline', uselist=False, cascade='all, delete-orphan'))
+
+    def to_dict(self):
+        import json
+        steps_list = []
+        try:
+            steps_list = json.loads(self.steps_json) if self.steps_json else []
+        except Exception:
+            steps_list = []
+        return {
+            'id': self.id,
+            'project_id': self.project_id,
+            'name': self.name,
+            'steps': steps_list,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }

@@ -61,7 +61,10 @@ import {
   Users,
   Terminal,
   Bug,
-  ChevronDown
+  ChevronDown,
+  ChevronUp,
+  Archive,
+  Filter
 } from 'lucide-react';
 import bahlLogo from './assets/bahl-logo.png';
 import ApiStudio from './components/ApiStudio';
@@ -225,8 +228,23 @@ export default function App() {
 
   // Activity Feed & Audit Trail State
   const [projectActivities, setProjectActivities] = useState([]);
+  const [activityPagination, setActivityPagination] = useState({
+    total: 0,
+    has_more: false,
+    current_page: 1,
+    limit: 10,
+    total_pages: 1
+  });
   const [activityFilter, setActivityFilter] = useState('ALL');
+  const [activityTimeframe, setActivityTimeframe] = useState('7_days');
   const [isActivitiesLoading, setIsActivitiesLoading] = useState(false);
+  const [isActivitiesLoadingMore, setIsActivitiesLoadingMore] = useState(false);
+  const [isArchivingActivities, setIsArchivingActivities] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState({
+    today: false,
+    yesterday: false,
+    earlier: true // Collapsed by default as per requirement
+  });
 
   // Notifications
   const [errorMsg, setErrorMsg] = useState('');
@@ -905,17 +923,143 @@ export default function App() {
     }
   };
 
-  const fetchProjectActivities = async (projectId) => {
+  const fetchProjectActivities = async (
+    projectId = currentProject?.id,
+    page = 1,
+    append = false,
+    timeframe = activityTimeframe,
+    filterType = activityFilter
+  ) => {
     if (!projectId) return;
     try {
-      setIsActivitiesLoading(true);
-      const res = await axios.get(`${API_BASE}/projects/${projectId}/activities?limit=50`);
-      setProjectActivities(res.data);
+      if (append) {
+        setIsActivitiesLoadingMore(true);
+      } else {
+        setIsActivitiesLoading(true);
+      }
+
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '10',
+        timeframe: timeframe,
+        filter_type: filterType,
+        include_archived: timeframe === 'all_time' ? 'true' : 'false'
+      });
+
+      const res = await axios.get(`${API_BASE}/projects/${projectId}/activities?${params.toString()}`);
+      const data = res.data;
+      
+      const items = Array.isArray(data) ? data : (data.items || []);
+      const total = data.total !== undefined ? data.total : items.length;
+      const hasMore = data.has_more !== undefined ? data.has_more : false;
+      const currentPage = data.current_page !== undefined ? data.current_page : page;
+      const totalPages = data.total_pages !== undefined ? data.total_pages : 1;
+
+      if (append) {
+        setProjectActivities(prev => {
+          const existingIds = new Set(prev.map(a => a.id));
+          const newItems = items.filter(a => !existingIds.has(a.id));
+          return [...prev, ...newItems];
+        });
+      } else {
+        setProjectActivities(items);
+      }
+
+      setActivityPagination({
+        total,
+        has_more: hasMore,
+        current_page: currentPage,
+        limit: 10,
+        total_pages: totalPages
+      });
     } catch (err) {
       console.error("Failed to fetch project activities", err);
     } finally {
       setIsActivitiesLoading(false);
+      setIsActivitiesLoadingMore(false);
     }
+  };
+
+  const handleLoadMoreActivities = () => {
+    if (activityPagination.has_more && !isActivitiesLoadingMore && currentProject) {
+      const nextPage = activityPagination.current_page + 1;
+      fetchProjectActivities(currentProject.id, nextPage, true, activityTimeframe, activityFilter);
+    }
+  };
+
+  const handleTimeframeChange = (newTimeframe) => {
+    setActivityTimeframe(newTimeframe);
+    fetchProjectActivities(currentProject?.id, 1, false, newTimeframe, activityFilter);
+  };
+
+  const handleFilterTypeChange = (newFilter) => {
+    setActivityFilter(newFilter);
+    fetchProjectActivities(currentProject?.id, 1, false, activityTimeframe, newFilter);
+  };
+
+  const handleArchiveOlderActivities = async () => {
+    if (!currentProject) return;
+    if (!window.confirm("Archive activity logs older than 30 days? All records remain 100% saved in the database for regulatory compliance and audit readiness, and can still be viewed under 'All Time (Archive)'.")) {
+      return;
+    }
+    setIsArchivingActivities(true);
+    try {
+      const res = await axios.post(`${API_BASE}/projects/${currentProject.id}/activities/archive`, { days: 30 });
+      showSuccess(res.data.message || "Archival completed.");
+      fetchProjectActivities(currentProject.id, 1, false, activityTimeframe, activityFilter);
+    } catch (err) {
+      showError(err);
+    } finally {
+      setIsArchivingActivities(false);
+    }
+  };
+
+  const toggleSectionCollapse = (sectionKey) => {
+    setCollapsedSections(prev => ({
+      ...prev,
+      [sectionKey]: !prev[sectionKey]
+    }));
+  };
+
+  const groupActivitiesByDate = (activities) => {
+    const today = new Date();
+    const todayYear = today.getFullYear();
+    const todayMonth = today.getMonth();
+    const todayDate = today.getDate();
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yestYear = yesterday.getFullYear();
+    const yestMonth = yesterday.getMonth();
+    const yestDate = yesterday.getDate();
+
+    const groups = {
+      today: [],
+      yesterday: [],
+      earlier: []
+    };
+
+    activities.forEach(item => {
+      if (!item.created_at) {
+        groups.earlier.push(item);
+        return;
+      }
+      try {
+        const utcStr = item.created_at.endsWith('Z') ? item.created_at : item.created_at + 'Z';
+        const d = new Date(utcStr);
+        if (d.getFullYear() === todayYear && d.getMonth() === todayMonth && d.getDate() === todayDate) {
+          groups.today.push(item);
+        } else if (d.getFullYear() === yestYear && d.getMonth() === yestMonth && d.getDate() === yestDate) {
+          groups.yesterday.push(item);
+        } else {
+          groups.earlier.push(item);
+        }
+      } catch (e) {
+        groups.earlier.push(item);
+      }
+    });
+
+    return groups;
   };
 
   const fetchProjectDetails = async (projectId) => {
@@ -1397,27 +1541,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-2.5">
-            {/* <div className={`hidden md:flex items-center gap-1.5 text-[10.5px] font-bold px-2.5 py-1 rounded-full border ${
-              isDarkMode ? 'bg-emerald-950/30 border-emerald-800/40 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-            }`}>
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Commercial banking company</span>
-            </div> */}
-
-            {/* API Management Navigation Button */}
-            <button
-              onClick={() => setViewMode('api_studio')}
-              className={`text-[11px] font-extrabold px-3 py-1.5 rounded-lg flex items-center space-x-1.5 transition shadow-sm cursor-pointer ${
-                isDarkMode 
-                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-purple-950/40 border border-purple-400/30' 
-                  : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-sm shadow-violet-500/20'
-              }`}
-              title="Open API Management & Chained Execution Studio"
-            >
-              <Terminal className="h-3.5 w-3.5 shrink-0" />
-              <span>API Management</span>
-            </button>
-
             <button
               onClick={toggleTheme}
               className={`p-2 rounded-xl border transition cursor-pointer ${
@@ -3339,7 +3462,7 @@ export default function App() {
               : 'bg-white border border-slate-200/90 shadow-sm shadow-slate-200/50'
           }`}>
             {/* Header & Controls */}
-            <div className={`flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3.5 border-b ${
+            <div className={`flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3.5 pb-3.5 border-b ${
               isDarkMode ? 'border-zinc-800/80' : 'border-slate-200/80'
             }`}>
               <div className="flex items-center space-x-2.5">
@@ -3363,20 +3486,63 @@ export default function App() {
                       }`} />
                       <span>Live</span>
                     </span>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+                      isDarkMode ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-slate-100 border-slate-200 text-slate-600'
+                    }`}>
+                      {projectActivities.length} loaded / {activityPagination.total} total
+                    </span>
                   </div>
                   <p className={`text-[10.5px] mt-0.5 font-medium ${
                     isDarkMode ? 'text-zinc-400' : 'text-slate-500'
                   }`}>
-                    Real-time log of multi-user task actions, state transitions, and workflow shifts.
+                    Immutable audit log of state transitions, task lifecycles, and governance actions with permanent DB retention.
                   </p>
                 </div>
               </div>
 
-              {/* Refresh Control */}
-              <div className="flex items-center space-x-2 self-end sm:self-center">
+              {/* Controls Bar: Timeframe, Archival & Refresh */}
+              <div className="flex flex-wrap items-center gap-2 self-end lg:self-center">
+                {/* Time Range Selector (Solution B) */}
+                <div className="flex items-center space-x-1.5">
+                  <Filter className={`h-3 w-3 ${isDarkMode ? 'text-zinc-400' : 'text-slate-500'}`} />
+                  <select
+                    value={activityTimeframe}
+                    onChange={(e) => handleTimeframeChange(e.target.value)}
+                    className={`text-[11px] px-2.5 py-1.5 rounded-lg border font-bold outline-none cursor-pointer transition ${
+                      isDarkMode 
+                        ? 'bg-[#141624] border-zinc-750 text-zinc-200 focus:border-purple-500 hover:bg-[#1a1c30]' 
+                        : 'bg-white border-slate-200 text-slate-700 focus:border-violet-500 hover:bg-slate-50 shadow-xs'
+                    }`}
+                  >
+                    <option value="7_days">Last 7 Days (Default)</option>
+                    <option value="today">Today</option>
+                    <option value="30_days">Last 30 Days</option>
+                    <option value="all_time">All Time (Archive)</option>
+                  </select>
+                </div>
+
+                {/* Super Admin Soft-Archive Action (Solution D) */}
+                {authUser?.role === 'SUPER_ADMIN' && (
+                  <button
+                    type="button"
+                    onClick={handleArchiveOlderActivities}
+                    disabled={isArchivingActivities}
+                    title="Soft-archive logs older than 30 days while preserving 100% database records"
+                    className={`flex items-center space-x-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition cursor-pointer font-bold ${
+                      isDarkMode 
+                        ? 'bg-amber-950/30 border-amber-800/60 text-amber-300 hover:bg-amber-900/50 shadow-xs' 
+                        : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 shadow-xs'
+                    }`}
+                  >
+                    <Archive className={`h-3 w-3 ${isArchivingActivities ? 'animate-spin' : ''}`} />
+                    <span className="text-[11px] hidden sm:inline">Archive &gt;30d</span>
+                  </button>
+                )}
+
+                {/* Refresh Control */}
                 <button
                   type="button"
-                  onClick={() => fetchProjectActivities(currentProject?.id)}
+                  onClick={() => fetchProjectActivities(currentProject?.id, 1, false, activityTimeframe, activityFilter)}
                   title="Refresh activity logs"
                   className={`flex items-center space-x-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition cursor-pointer font-bold ${
                     isDarkMode 
@@ -3393,18 +3559,18 @@ export default function App() {
             {/* Filter Pills */}
             <div className="flex flex-wrap items-center gap-1.5 pt-3 pb-3 text-xs">
               {[
-                { key: 'ALL', label: 'All Activity', count: projectActivities.length },
-                { key: 'STATUS_CHANGE', label: 'Status Shifts', count: projectActivities.filter(a => a.action_type === 'STATUS_CHANGE').length },
-                { key: 'STAGE_SHIFT', label: 'Stage Moves', count: projectActivities.filter(a => a.action_type === 'STAGE_SHIFT').length },
-                { key: 'CREATE_TASK', label: 'Creations', count: projectActivities.filter(a => a.action_type === 'CREATE_TASK').length },
-                { key: 'UPDATE_TASK', label: 'Task Edits', count: projectActivities.filter(a => a.action_type === 'UPDATE_TASK').length },
+                { key: 'ALL', label: 'All Activity' },
+                { key: 'STATUS_CHANGE', label: 'Status Shifts' },
+                { key: 'STAGE_SHIFT', label: 'Stage Moves' },
+                { key: 'CREATE_TASK', label: 'Creations' },
+                { key: 'UPDATE_TASK', label: 'Task Edits' },
               ].map(f => {
                 const isSelected = activityFilter === f.key;
                 return (
                   <button
                     key={f.key}
                     type="button"
-                    onClick={() => setActivityFilter(f.key)}
+                    onClick={() => handleFilterTypeChange(f.key)}
                     className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer ${
                       isSelected
                         ? (isDarkMode 
@@ -3416,37 +3582,43 @@ export default function App() {
                     }`}
                   >
                     <span>{f.label}</span>
-                    <span className={`text-[9.5px] px-1.5 py-0.2 rounded-full font-mono font-extrabold ${
-                      isSelected 
-                        ? 'bg-white/20 text-white' 
-                        : isDarkMode ? 'bg-zinc-800 text-zinc-300' : 'bg-slate-200/80 text-slate-700'
-                    }`}>
-                      {f.count}
-                    </span>
+                    {isSelected && (
+                      <span className={`text-[9.5px] px-1.5 py-0.2 rounded-full font-mono font-extrabold ${
+                        isDarkMode ? 'bg-white/20 text-white' : 'bg-white/30 text-white'
+                      }`}>
+                        {projectActivities.length}
+                      </span>
+                    )}
                   </button>
                 );
               })}
             </div>
 
-            {/* Timeline Stream */}
-            <div className="mt-1 space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+            {/* Timeline Stream with Collapsible Date Grouping (Solution C) */}
+            <div className="mt-1 space-y-4 max-h-[480px] overflow-y-auto pr-1">
               {(() => {
-                const filteredActivities = projectActivities.filter(a => {
-                  if (activityFilter === 'ALL') return true;
-                  return a.action_type === activityFilter;
-                });
-
-                if (filteredActivities.length === 0) {
+                if (isActivitiesLoading && projectActivities.length === 0) {
                   return (
-                    <div className="py-10 text-center space-y-1.5">
-                      <Clock className="h-6 w-6 text-purple-400 mx-auto opacity-50 mb-2" />
-                      <p className="text-xs text-zinc-500 font-medium">No activity records logged in this filter.</p>
-                      <p className="text-[11px] text-zinc-400">Actions performed on tasks (create, status shift, details edit) will appear here in real time.</p>
+                    <div className="py-12 text-center space-y-2">
+                      <RefreshCw className="h-6 w-6 text-purple-400 animate-spin mx-auto opacity-70" />
+                      <p className="text-xs text-zinc-400 font-medium">Fetching verified audit trail records...</p>
                     </div>
                   );
                 }
 
-                return filteredActivities.map(a => {
+                if (projectActivities.length === 0) {
+                  return (
+                    <div className="py-10 text-center space-y-1.5">
+                      <Clock className="h-6 w-6 text-purple-400 mx-auto opacity-50 mb-2" />
+                      <p className="text-xs text-zinc-400 font-medium">No activity records found in this timeframe and filter.</p>
+                      <p className="text-[11px] text-zinc-500">Actions performed on tasks or defects will appear here in real time.</p>
+                    </div>
+                  );
+                }
+
+                const groups = groupActivitiesByDate(projectActivities);
+
+                const renderActivityItem = (a) => {
                   const initials = (a.user_name || 'User')
                     .split(' ')
                     .map(n => n[0])
@@ -3454,7 +3626,6 @@ export default function App() {
                     .toUpperCase()
                     .slice(0, 2);
 
-                  // Find task if still exists
                   const matchedTask = a.task_id && projectDetails?.tasks ? projectDetails.tasks.find(t => t.id === a.task_id) : null;
 
                   return (
@@ -3489,6 +3660,15 @@ export default function App() {
                             }`}>
                               {a.user_role}
                             </span>
+                            {a.is_archived && (
+                              <span className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${
+                                isDarkMode 
+                                  ? 'bg-amber-950/50 border-amber-800 text-amber-400' 
+                                  : 'bg-amber-50 border-amber-200 text-amber-700'
+                              }`}>
+                                Archived
+                              </span>
+                            )}
                           </div>
 
                           <span 
@@ -3516,9 +3696,9 @@ export default function App() {
                             </span>
                             <ArrowRight className={`h-3 w-3 shrink-0 ${isDarkMode ? 'text-purple-400' : 'text-violet-600'}`} />
                             <span className={`px-2 py-0.5 rounded border font-bold ${
-                              a.new_state === 'Completed'
+                              a.new_state === 'Completed' || a.new_state === 'CLOSED' || a.new_state === 'VERIFIED'
                                 ? (isDarkMode ? 'bg-emerald-950/60 border-emerald-800 text-emerald-400' : 'bg-emerald-50 border-emerald-300 text-emerald-800')
-                                : a.new_state === 'In Progress'
+                                : a.new_state === 'In Progress' || a.new_state === 'IN_PROGRESS'
                                   ? (isDarkMode ? 'bg-blue-950/60 border-blue-800 text-blue-400' : 'bg-blue-50 border-blue-300 text-blue-800')
                                   : (isDarkMode ? 'bg-purple-950/60 border-purple-800 text-purple-300' : 'bg-purple-50 border-purple-300 text-purple-800')
                             }`}>
@@ -3541,8 +3721,190 @@ export default function App() {
                       </div>
                     </div>
                   );
-                });
+                };
+
+                return (
+                  <div className="space-y-4">
+                    {/* TODAY GROUP (Expanded by default) */}
+                    {groups.today.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between sticky top-0 z-10 py-1 bg-inherit backdrop-blur-xs">
+                          <div className="flex items-center space-x-2">
+                            <Calendar className="h-3.5 w-3.5 text-purple-400" />
+                            <span className={`text-xs font-black tracking-wide uppercase ${
+                              isDarkMode ? 'text-purple-300' : 'text-purple-700'
+                            }`}>
+                              Today
+                            </span>
+                            <span className={`text-[9.5px] px-2 py-0.2 rounded-full font-bold font-mono ${
+                              isDarkMode ? 'bg-purple-950/80 border border-purple-800/60 text-purple-300' : 'bg-purple-100 text-purple-800'
+                            }`}>
+                              {groups.today.length} {groups.today.length === 1 ? 'item' : 'items'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleSectionCollapse('today')}
+                            className={`text-[10.5px] font-bold flex items-center space-x-1 cursor-pointer transition ${
+                              isDarkMode ? 'text-zinc-400 hover:text-zinc-200' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            <span>{collapsedSections.today ? 'Expand' : 'Collapse'}</span>
+                            {collapsedSections.today ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+                          </button>
+                        </div>
+                        {!collapsedSections.today && (
+                          <div className="space-y-2.5">
+                            {groups.today.map(renderActivityItem)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* YESTERDAY GROUP (Expanded by default) */}
+                    {groups.yesterday.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between sticky top-0 z-10 py-1 bg-inherit backdrop-blur-xs">
+                          <div className="flex items-center space-x-2">
+                            <Calendar className="h-3.5 w-3.5 text-indigo-400" />
+                            <span className={`text-xs font-black tracking-wide uppercase ${
+                              isDarkMode ? 'text-indigo-300' : 'text-indigo-700'
+                            }`}>
+                              Yesterday
+                            </span>
+                            <span className={`text-[9.5px] px-2 py-0.2 rounded-full font-bold font-mono ${
+                              isDarkMode ? 'bg-indigo-950/80 border border-indigo-800/60 text-indigo-300' : 'bg-indigo-100 text-indigo-800'
+                            }`}>
+                              {groups.yesterday.length} {groups.yesterday.length === 1 ? 'item' : 'items'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleSectionCollapse('yesterday')}
+                            className={`text-[10.5px] font-bold flex items-center space-x-1 cursor-pointer transition ${
+                              isDarkMode ? 'text-zinc-400 hover:text-zinc-200' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            <span>{collapsedSections.yesterday ? 'Expand' : 'Collapse'}</span>
+                            {collapsedSections.yesterday ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+                          </button>
+                        </div>
+                        {!collapsedSections.yesterday && (
+                          <div className="space-y-2.5">
+                            {groups.yesterday.map(renderActivityItem)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* EARLIER / OLDER GROUP (Collapsible accordion - collapsed by default) */}
+                    {groups.earlier.length > 0 && (
+                      <div className={`rounded-xl border transition-all ${
+                        isDarkMode 
+                          ? 'bg-[#121422]/60 border-zinc-800/80' 
+                          : 'bg-slate-50/70 border-slate-200/80'
+                      }`}>
+                        <button
+                          type="button"
+                          onClick={() => toggleSectionCollapse('earlier')}
+                          className="w-full flex items-center justify-between p-3 cursor-pointer group text-left"
+                        >
+                          <div className="flex items-center space-x-2.5">
+                            <div className={`p-1.5 rounded-lg border ${
+                              isDarkMode ? 'bg-zinc-800/80 border-zinc-700/60 text-zinc-300' : 'bg-white border-slate-200 text-slate-700 shadow-xs'
+                            }`}>
+                              <Clock className="h-3.5 w-3.5" />
+                            </div>
+                            <div>
+                              <div className="flex items-center space-x-2">
+                                <span className={`text-xs font-extrabold tracking-wide uppercase ${
+                                  isDarkMode ? 'text-zinc-200' : 'text-slate-800'
+                                }`}>
+                                  Earlier / Older Activities
+                                </span>
+                                <span className={`text-[9.5px] px-2 py-0.2 rounded-full font-bold font-mono ${
+                                  isDarkMode ? 'bg-zinc-800 border border-zinc-700 text-zinc-300' : 'bg-slate-200 text-slate-800'
+                                }`}>
+                                  {groups.earlier.length} {groups.earlier.length === 1 ? 'item' : 'items'}
+                                </span>
+                              </div>
+                              <p className={`text-[10px] mt-0.5 ${isDarkMode ? 'text-zinc-400' : 'text-slate-500'}`}>
+                                {collapsedSections.earlier ? 'Click to expand historical activities' : 'Click to collapse historical activities'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className={`p-1.5 rounded-lg border transition ${
+                            isDarkMode 
+                              ? 'border-zinc-700/50 group-hover:bg-zinc-800 text-zinc-300' 
+                              : 'border-slate-200 group-hover:bg-white text-slate-600 shadow-xs'
+                          }`}>
+                            {collapsedSections.earlier ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronUp className="h-4 w-4" />
+                            )}
+                          </div>
+                        </button>
+
+                        {!collapsedSections.earlier && (
+                          <div className="p-3 pt-0 space-y-2.5 border-t border-dashed mt-1 border-zinc-800/60">
+                            <div className="pt-2 space-y-2.5">
+                              {groups.earlier.map(renderActivityItem)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
               })()}
+            </div>
+
+            {/* Pagination & Load More Section (Solution A) */}
+            <div className={`pt-3.5 pb-1 flex flex-col sm:flex-row items-center justify-between gap-3 border-t mt-4 ${
+              isDarkMode ? 'border-zinc-800/80' : 'border-slate-200/80'
+            }`}>
+              <div className="text-center sm:text-left">
+                <p className={`text-[11px] font-medium ${isDarkMode ? 'text-zinc-400' : 'text-slate-500'}`}>
+                  Showing <span className={`font-bold ${isDarkMode ? 'text-purple-300' : 'text-purple-700'}`}>{projectActivities.length}</span> of <span className="font-bold">{activityPagination.total}</span> activity records
+                  {activityPagination.has_more && (
+                    <span className="ml-1 text-[10.5px] opacity-80">
+                      ({activityPagination.total - projectActivities.length} more in database)
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              {activityPagination.has_more ? (
+                <button
+                  type="button"
+                  onClick={handleLoadMoreActivities}
+                  disabled={isActivitiesLoadingMore}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition shadow-md cursor-pointer ${
+                    isDarkMode 
+                      ? 'bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white border border-purple-500/30 shadow-purple-950/50' 
+                      : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-xs'
+                  }`}
+                >
+                  {isActivitiesLoadingMore ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-white" />
+                      <span>Loading Older Activities...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="h-3.5 w-3.5 text-white" />
+                      <span>Load Older Activities (+10)</span>
+                    </>
+                  )}
+                </button>
+              ) : projectActivities.length > 0 ? (
+                <div className="flex items-center space-x-1.5 text-[10.5px] text-emerald-400 font-semibold">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span>All matching records loaded</span>
+                </div>
+              ) : null}
             </div>
           </section>
             </>

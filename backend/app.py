@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+import math
 import json
 import jwt
 import requests
@@ -1196,6 +1197,11 @@ def add_project_phase(current_user, project_id):
     if not name:
         return jsonify({'error': 'Phase name is required'}), 400
         
+    # Check for duplicate phase name in the same project
+    existing_phase = ProjectPhase.query.filter_by(project_id=project_id, name=name).first()
+    if existing_phase:
+        return jsonify({'error': f"A stage with the name '{name}' already exists in this project."}), 400
+
     # Determine phase order (append to end)
     max_order = db.session.query(db.func.max(ProjectPhase.phase_order)).filter_by(project_id=project_id).scalar()
     next_order = 0 if max_order is None else max_order + 1
@@ -1585,11 +1591,129 @@ def get_project_activities(current_user, project_id):
     if not project:
         return jsonify({'error': 'Project not found'}), 404
         
-    limit = request.args.get('limit', default=50, type=int)
+    page = request.args.get('page', default=1, type=int)
+    page = max(page, 1)
+    
+    limit = request.args.get('limit', default=10, type=int)
     limit = min(max(limit, 1), 200)
     
-    logs = ActivityLog.query.filter_by(project_id=project_id).order_by(ActivityLog.created_at.desc()).limit(limit).all()
-    return jsonify([log.to_dict() for log in logs])
+    timeframe = request.args.get('timeframe', default='7_days', type=str).strip().lower()
+    include_archived_param = request.args.get('include_archived', default='false', type=str).strip().lower()
+    include_archived = include_archived_param in ('true', '1', 'yes')
+    
+    filter_type = request.args.get('filter_type', default='ALL', type=str).strip()
+    
+    query = ActivityLog.query.filter_by(project_id=project_id)
+    
+    # Timeframe filtering
+    now = datetime.datetime.utcnow()
+    if timeframe == 'today':
+        start_of_today = datetime.datetime(now.year, now.month, now.day)
+        query = query.filter(ActivityLog.created_at >= start_of_today)
+    elif timeframe == '7_days':
+        seven_days_ago = now - datetime.timedelta(days=7)
+        query = query.filter(ActivityLog.created_at >= seven_days_ago)
+    elif timeframe == '30_days':
+        thirty_days_ago = now - datetime.timedelta(days=30)
+        query = query.filter(ActivityLog.created_at >= thirty_days_ago)
+    elif timeframe == 'all_time':
+        pass  # Include all time records
+    else:
+        seven_days_ago = now - datetime.timedelta(days=7)
+        query = query.filter(ActivityLog.created_at >= seven_days_ago)
+
+    # Archival filtering: If not including archived and not querying all_time, exclude archived records
+    if not include_archived and timeframe != 'all_time':
+        query = query.filter(ActivityLog.is_archived == False)
+        
+    # Action type / Category filter
+    if filter_type and filter_type.upper() != 'ALL':
+        ft_upper = filter_type.upper()
+        ft_lower = filter_type.lower()
+        if ft_lower == 'status_shift' or ft_upper == 'STATUS_CHANGE':
+            query = query.filter(ActivityLog.action_type.in_(['STATUS_CHANGE', 'BUG_STATUS_CHANGE']))
+        elif ft_lower == 'stage_move' or ft_upper == 'STAGE_SHIFT':
+            query = query.filter(ActivityLog.action_type == 'STAGE_SHIFT')
+        elif ft_lower == 'creation' or ft_upper == 'CREATE_TASK':
+            query = query.filter(ActivityLog.action_type.in_(['CREATE_TASK', 'BUG_REPORTED']))
+        elif ft_lower == 'edit' or ft_upper == 'UPDATE_TASK':
+            query = query.filter(ActivityLog.action_type.in_(['UPDATE_TASK', 'REASSIGN_TASK', 'BUG_ASSIGNED', 'BUG_UPDATED']))
+        else:
+            query = query.filter(ActivityLog.action_type == filter_type)
+            
+    total = query.count()
+    total_pages = max(math.ceil(total / limit), 1) if total > 0 else 1
+    offset = (page - 1) * limit
+    
+    logs = query.order_by(ActivityLog.created_at.desc()).offset(offset).limit(limit).all()
+    has_more = (offset + len(logs)) < total
+    
+    return jsonify({
+        'items': [log.to_dict() for log in logs],
+        'total': total,
+        'has_more': has_more,
+        'current_page': page,
+        'total_pages': total_pages,
+        'limit': limit
+    })
+
+
+@app.route('/api/projects/<int:project_id>/activities/archive', methods=['POST'])
+@token_required
+def archive_project_activities(current_user, project_id):
+    """
+    Super Admin / Admin regulatory soft-archiving endpoint for activity records older than N days.
+    Guarantees 100% data preservation and adds immutable audit event.
+    """
+    if current_user.role not in ['SUPER_ADMIN', 'ADMIN']:
+        return jsonify({'error': 'Unauthorized: Super Admin or Admin role required for archival actions.'}), 403
+        
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+        
+    data = request.json or {}
+    days = data.get('days', 30)
+    try:
+        days = int(days)
+        if days < 1:
+            days = 30
+    except (ValueError, TypeError):
+        days = 30
+        
+    cutoff_date = datetime.datetime.utcnow() - datetime.timedelta(days=days)
+    
+    logs_to_archive = ActivityLog.query.filter(
+        ActivityLog.project_id == project_id,
+        ActivityLog.is_archived == False,
+        ActivityLog.created_at <= cutoff_date
+    ).all()
+    
+    archived_count = len(logs_to_archive)
+    for log in logs_to_archive:
+        log.is_archived = True
+        
+    # Append regulatory audit log entry
+    archive_audit = ActivityLog(
+        project_id=project_id,
+        user_id=current_user.id,
+        user_name=current_user.name,
+        user_email=current_user.email,
+        user_role=current_user.role,
+        action_type='AUDIT_ARCHIVE',
+        details=f"Regulatory retention rule executed: {archived_count} activity logs older than {days} days categorized as archived.",
+        previous_state='ACTIVE_LOGS',
+        new_state='ARCHIVED_LOGS',
+        is_archived=False
+    )
+    db.session.add(archive_audit)
+    db.session.commit()
+    
+    return jsonify({
+        'message': f"Successfully archived {archived_count} activity records older than {days} days.",
+        'archived_count': archived_count,
+        'days': days
+    })
 
 # ----------------- TASK COLLABORATIVE COMMENTS -----------------
 

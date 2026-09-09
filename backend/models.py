@@ -289,6 +289,7 @@ class ActivityLog(db.Model):
     details = db.Column(db.Text, nullable=False)
     previous_state = db.Column(db.Text, nullable=True)
     new_state = db.Column(db.Text, nullable=True)
+    is_archived = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -307,6 +308,7 @@ class ActivityLog(db.Model):
             'details': self.details,
             'previous_state': self.previous_state,
             'new_state': self.new_state,
+            'is_archived': self.is_archived,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 

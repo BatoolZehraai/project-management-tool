@@ -369,3 +369,34 @@ class ApiPipeline(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
+
+
+class ApiSnippet(db.Model):
+    __tablename__ = 'api_snippets'
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id', ondelete='CASCADE'), nullable=False, index=True)
+    title = db.Column(db.String(150), nullable=False)
+    category = db.Column(db.String(50), default='Custom')  # 'Authentication', 'Core Banking', 'Standard Headers', 'SDLC Tasks', 'Custom'
+    target_scope = db.Column(db.String(50), default='body')  # 'body' or 'headers'
+    content = db.Column(db.Text, nullable=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    project = db.relationship('Project', backref=db.backref('api_snippets', cascade='all, delete-orphan'))
+    creator = db.relationship('User', foreign_keys=[created_by_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'project_id': self.project_id,
+            'title': self.title,
+            'category': self.category,
+            'target_scope': self.target_scope,
+            'content': self.content,
+            'created_by': self.creator.name if self.creator else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+

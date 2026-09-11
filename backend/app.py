@@ -15,7 +15,7 @@ import json
 import jwt
 import requests
 
-from models import db, User, Project, ProjectPhase, Task, Comment, AuditLog, FileItem, ActivityLog, Bug, ApiEnvironment, ApiPipeline
+from models import db, User, Project, ProjectPhase, Task, Comment, AuditLog, FileItem, ActivityLog, Bug, ApiEnvironment, ApiPipeline, ApiSnippet
 from config import Config
 
 app = Flask(__name__)
@@ -944,20 +944,66 @@ def get_project_api_environments(current_user, project_id):
         return jsonify({'error': 'Project not found'}), 404
 
     envs = ApiEnvironment.query.filter_by(project_id=project_id).order_by(ApiEnvironment.id.asc()).all()
-    if not envs:
-        # Initialize default environments for this project
-        for env_def in DEFAULT_PROJECT_ENVIRONMENTS:
-            new_env = ApiEnvironment(
-                project_id=project_id,
-                name=env_def['name'],
-                variables_json=json.dumps(env_def['variables']),
-                is_default=env_def.get('is_default', False)
-            )
-            db.session.add(new_env)
-        db.session.commit()
-        envs = ApiEnvironment.query.filter_by(project_id=project_id).order_by(ApiEnvironment.id.asc()).all()
-
     return jsonify([env.to_dict() for env in envs])
+
+
+@app.route('/api/projects/<int:project_id>/api-snippets', methods=['GET'])
+@token_required
+def get_project_api_snippets(current_user, project_id):
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+
+    snippets = ApiSnippet.query.filter_by(project_id=project_id).order_by(ApiSnippet.created_at.desc()).all()
+    return jsonify([s.to_dict() for s in snippets])
+
+
+@app.route('/api/projects/<int:project_id>/api-snippets', methods=['POST'])
+@token_required
+def create_project_api_snippet(current_user, project_id):
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+
+    data = request.json or {}
+    title = str(data.get('title', '')).strip()
+    if not title:
+        return jsonify({'error': 'Snippet title is required'}), 400
+
+    content = str(data.get('content', '')).strip()
+    if not content:
+        return jsonify({'error': 'Snippet content/code is required'}), 400
+
+    category = str(data.get('category', 'Custom')).strip() or 'Custom'
+    target_scope = str(data.get('target_scope', 'body')).strip().lower()
+    if target_scope not in ['body', 'headers']:
+        target_scope = 'body'
+
+    new_snippet = ApiSnippet(
+        project_id=project_id,
+        title=title,
+        category=category,
+        target_scope=target_scope,
+        content=content,
+        created_by_id=current_user.id
+    )
+    db.session.add(new_snippet)
+    db.session.commit()
+
+    return jsonify(new_snippet.to_dict()), 201
+
+
+@app.route('/api/projects/<int:project_id>/api-snippets/<int:snippet_id>', methods=['DELETE'])
+@token_required
+def delete_project_api_snippet(current_user, project_id, snippet_id):
+    snippet = ApiSnippet.query.filter_by(project_id=project_id, id=snippet_id).first()
+    if not snippet:
+        return jsonify({'error': 'Snippet not found'}), 404
+
+    db.session.delete(snippet)
+    db.session.commit()
+
+    return jsonify({'message': f"Snippet '{snippet.title}' deleted successfully."})
 
 
 @app.route('/api/projects/<int:project_id>/api-environments', methods=['POST'])
@@ -972,9 +1018,9 @@ def create_project_api_environment(current_user, project_id):
     if not name:
         return jsonify({'error': 'Environment name is required'}), 400
 
-    variables = data.get('variables', [])
-    if not isinstance(variables, list):
-        variables = []
+    variables = data.get('variables', {})
+    if not isinstance(variables, (list, dict)):
+        variables = {}
 
     is_default = bool(data.get('is_default', False))
     if is_default:
@@ -1005,7 +1051,7 @@ def update_project_api_environment(current_user, project_id, env_id):
         if name:
             env.name = name
 
-    if 'variables' in data and isinstance(data['variables'], list):
+    if 'variables' in data and isinstance(data['variables'], (list, dict)):
         env.variables_json = json.dumps(data['variables'])
 
     if 'is_default' in data:

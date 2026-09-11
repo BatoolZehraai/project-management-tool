@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   ArrowLeft,
   Play,
@@ -15,6 +15,7 @@ import {
   Terminal,
   Code2,
   ChevronRight,
+  ChevronDown,
   RefreshCw,
   Zap,
   Layers,
@@ -28,35 +29,46 @@ import {
   Edit2,
   AlertCircle,
   FolderGit2,
-  CheckCheck
+  BookmarkCheck,
+  BookOpen,
+  ArrowDownToLine,
+  Filter,
+  Eye,
+  KeyRound,
+  ExternalLink,
+  ShieldCheck,
+  Lock,
+  CheckCheck,
+  PlusCircle
 } from 'lucide-react';
 import bahlLogo from '../assets/bahl-logo.png';
+import SnippetDrawer from './SnippetDrawer';
 
 const METHOD_COLORS = {
   GET: {
     bg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
     btn: 'bg-emerald-600 hover:bg-emerald-500 text-white',
-    badge: 'text-emerald-500 font-black'
+    badge: 'text-emerald-500 font-bold'
   },
   POST: {
     bg: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
     btn: 'bg-blue-600 hover:bg-blue-500 text-white',
-    badge: 'text-blue-500 font-black'
+    badge: 'text-blue-500 font-bold'
   },
   PUT: {
     bg: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
     btn: 'bg-amber-600 hover:bg-amber-500 text-white',
-    badge: 'text-amber-500 font-black'
+    badge: 'text-amber-500 font-bold'
   },
   PATCH: {
     bg: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
     btn: 'bg-purple-600 hover:bg-purple-500 text-white',
-    badge: 'text-purple-500 font-black'
+    badge: 'text-purple-500 font-bold'
   },
   DELETE: {
     bg: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
     btn: 'bg-rose-600 hover:bg-rose-500 text-white',
-    badge: 'text-rose-500 font-black'
+    badge: 'text-rose-500 font-bold'
   }
 };
 
@@ -74,19 +86,91 @@ const createDefaultStep = (stepNumber) => ({
   extractionRules: []
 });
 
+const BUILTIN_ENVIRONMENTS = [
+  {
+    id: 'local',
+    name: 'Local Backend',
+    isBuiltin: true,
+    variables: {
+      baseUrl: 'http://127.0.0.1:5000/api',
+      adminEmail: 'admin@bankalhabib.com',
+      adminPassword: 'Admin123!'
+    }
+  },
+  {
+    id: 'dev',
+    name: 'Dev Environment',
+    isBuiltin: true,
+    variables: {
+      baseUrl: 'https://dev-sdlc.bankalhabib.com/api',
+      adminEmail: 'dev.admin@bankalhabib.com',
+      adminPassword: 'DevAdmin2026!'
+    }
+  },
+  {
+    id: 'staging',
+    name: 'Staging Cluster',
+    isBuiltin: true,
+    variables: {
+      baseUrl: 'https://staging-sdlc.bankalhabib.com/api',
+      adminEmail: 'qa.lead@bankalhabib.com',
+      adminPassword: 'StagingLead2026!'
+    }
+  },
+  {
+    id: 'prod',
+    name: 'Production Gateway',
+    isBuiltin: true,
+    variables: {
+      baseUrl: 'https://sdlc.bankalhabib.com/api',
+      adminEmail: 'secops@bankalhabib.com',
+      adminPassword: 'ProdSecurity2026!'
+    }
+  }
+];
+
+const BUILTIN_NAMES = new Set([
+  'Local Backend', 'Dev Environment', 'Staging Cluster', 'Production Gateway',
+  'Local (Development)', 'Development (Sandbox)', 'Staging (UAT)', 'Staging (UAT Cluster)', 'Production (Live)'
+]);
+
+// Helper to extract nested value from JSON object by path
+function extractJsonPath(obj, path) {
+  if (!obj || !path) return undefined;
+  const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean);
+  let current = obj;
+  for (const part of parts) {
+    if (current === null || current === undefined) return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+// Helper to replace {{varName}} in string
+function interpolateVariables(str, varMap) {
+  if (typeof str !== 'string') return str;
+  return str.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (match, key) => {
+    return varMap[key] !== undefined ? String(varMap[key]) : match;
+  });
+}
+
 export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject, projects, onSelectProject }) {
   // Current active project binding
   const currentProject = activeProject || (projects && projects.length > 0 ? projects[0] : { id: 1, name: 'Core Banking Modernization' });
   const projectId = currentProject?.id || 1;
 
   // Environments State (Project-scoped)
-  const [environments, setEnvironments] = useState([]);
-  const [activeEnvId, setActiveEnvId] = useState(null);
+  const [customEnvironments, setCustomEnvironments] = useState([]);
+  const [activeEnvId, setActiveEnvId] = useState('local');
+  const [isEnvDropdownOpen, setIsEnvDropdownOpen] = useState(false);
   const [showEnvModal, setShowEnvModal] = useState(false);
   const [isLoadingEnvs, setIsLoadingEnvs] = useState(false);
+  const [editingEnv, setEditingEnv] = useState(null);
   const [envSaveStatus, setEnvSaveStatus] = useState(null);
-  const [newEnvName, setNewEnvName] = useState('');
-  const [isCreatingEnv, setIsCreatingEnv] = useState(false);
+  const envDropdownRef = useRef(null);
+
+  // Snippet Drawer State
+  const [showSnippetDrawer, setShowSnippetDrawer] = useState(false);
 
   // Multi-Phase Dynamic Pipeline Steps State (Project-scoped)
   const [steps, setSteps] = useState([]);
@@ -98,651 +182,872 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
   // Runtime extracted variables from chained pipeline or single execution
   const [runtimeVars, setRuntimeVars] = useState({});
 
-  // Execution results keyed by step.id
-  const [stepResults, setStepResults] = useState({});
-  const [executingStepIndex, setExecutingStepIndex] = useState(null);
+  // Active step editor state
+  const [activeTab, setActiveTab] = useState('body'); // 'body' | 'headers' | 'params' | 'extraction'
+  const [responseTab, setResponseTab] = useState('body'); // 'body' | 'headers' | 'extracted'
 
-  // Request sub-tab in workspace: 'params' | 'headers' | 'body' | 'extraction'
-  const [reqTab, setReqTab] = useState('body');
+  // Per-step execution state map
+  const [stepExecutions, setStepExecutions] = useState({});
+  const [isPipelineRunning, setIsPipelineRunning] = useState(false);
+  const [pipelineProgress, setPipelineProgress] = useState({ current: 0, total: 0, status: 'idle' });
 
-  // Response sub-tab: 'body' | 'headers' | 'extracted'
-  const [resTab, setResTab] = useState('body');
+  // Saved Response comparison state
+  const [viewingSavedResponse, setViewingSavedResponse] = useState(false);
+  const [toastMessage, setToastMessage] = useState(null);
 
-  // Chained Pipeline Runner state
-  const [isRunningPipeline, setIsRunningPipeline] = useState(false);
-  const [pipelineLogs, setPipelineLogs] = useState([]);
-  const [copiedResponse, setCopiedResponse] = useState(false);
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (envDropdownRef.current && !envDropdownRef.current.contains(event.target)) {
+        setIsEnvDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter custom environments so standard/dummy ones are never duplicated
+  const filteredCustomEnvs = useMemo(() => {
+    return customEnvironments.filter(e => !BUILTIN_NAMES.has(e.name) && !['local', 'dev', 'staging', 'prod'].includes(String(e.id)));
+  }, [customEnvironments]);
+
+  // Merged environments list
+  const allEnvironments = useMemo(() => {
+    return [...BUILTIN_ENVIRONMENTS, ...filteredCustomEnvs];
+  }, [filteredCustomEnvs]);
+
+  // Current active environment object
+  const activeEnv = useMemo(() => {
+    return allEnvironments.find(e => String(e.id) === String(activeEnvId)) || BUILTIN_ENVIRONMENTS[0];
+  }, [allEnvironments, activeEnvId]);
+
+  // Combined available variables: Environment vars + dynamically extracted runtime vars
+  const mergedVariables = useMemo(() => {
+    return {
+      ...(activeEnv?.variables || {}),
+      ...runtimeVars
+    };
+  }, [activeEnv, runtimeVars]);
 
   // Active step object
   const activeStep = steps[activeStepIndex] || steps[0] || null;
-  const currentResult = activeStep ? stepResults[activeStep.id] : null;
+  const activeStepExec = activeStep ? (stepExecutions[activeStep.id] || {}) : {};
 
-  // Active Environment object
-  const activeEnv = environments.find(e => e.id === activeEnvId) || environments[0] || {
-    id: 0,
-    name: 'Local Backend',
-    variables: [{ key: 'baseUrl', value: 'http://127.0.0.1:5000/api' }]
-  };
-
-  // Helper to extract nested value from object via path like 'user.id' or 'token'
-  const getNestedValue = (obj, path) => {
-    if (!obj || !path) return undefined;
-    const parts = path.split('.');
-    let curr = obj;
-    for (const part of parts) {
-      if (curr && typeof curr === 'object' && part in curr) {
-        curr = curr[part];
-      } else {
-        return undefined;
-      }
-    }
-    return curr;
-  };
-
-  // Fetch Project-Scoped Environments
-  const loadEnvironments = useCallback(async (targetProjectId) => {
-    setIsLoadingEnvs(true);
+  // Fetch Custom Environments for Project
+  const fetchEnvironments = useCallback(async () => {
     try {
+      setIsLoadingEnvs(true);
       const token = localStorage.getItem('authToken');
-      const res = await fetch(`http://127.0.0.1:5000/api/projects/${targetProjectId}/api-environments`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-environments`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
-      const data = await res.json();
-      const envList = Array.isArray(data) ? data : (data.environments || (data.environment ? [data.environment] : []));
-      if (envList && envList.length > 0) {
-        setEnvironments(envList);
-        const defaultEnv = envList.find(e => e.is_default) || envList[0];
-        setActiveEnvId(prev => {
-          const exists = envList.some(e => e.id === prev);
-          return exists ? prev : defaultEnv.id;
+      if (res.ok) {
+        const data = await res.json();
+        const rawList = Array.isArray(data) ? data : (data.environments || []);
+        const normalized = rawList.map(env => {
+          let varsObj = {};
+          if (Array.isArray(env.variables)) {
+            env.variables.forEach(v => {
+              if (v && v.key) varsObj[v.key] = v.value || '';
+            });
+          } else if (typeof env.variables === 'object' && env.variables !== null) {
+            varsObj = env.variables;
+          }
+          return {
+            ...env,
+            variables: varsObj
+          };
         });
+        setCustomEnvironments(normalized);
       }
     } catch (err) {
-      console.error('Failed to load environments for project:', err);
+      console.error('Failed to load custom environments:', err);
     } finally {
       setIsLoadingEnvs(false);
     }
-  }, []);
+  }, [projectId]);
 
-  // Fetch Project-Scoped Pipeline Steps
-  const loadPipeline = useCallback(async (targetProjectId) => {
-    setIsLoadingPipeline(true);
+  // Fetch Pipeline for Project
+  const fetchPipeline = useCallback(async () => {
     try {
+      setIsLoadingPipeline(true);
       const token = localStorage.getItem('authToken');
-      const res = await fetch(`http://127.0.0.1:5000/api/projects/${targetProjectId}/api-pipeline`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-pipeline`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
-      const data = await res.json();
-      const pipe = data.pipeline || data;
-      if (pipe && pipe.steps && Array.isArray(pipe.steps) && pipe.steps.length > 0) {
-        setSteps(pipe.steps);
-        setActiveStepIndex(0);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.pipeline && Array.isArray(data.pipeline.steps) && data.pipeline.steps.length > 0) {
+          setSteps(data.pipeline.steps);
+        } else {
+          // Default initial 2-step pipeline
+          setSteps([
+            {
+              id: 'step_1',
+              name: '1. Authenticate & Obtain Dynamic Token',
+              method: 'POST',
+              url: '{{baseUrl}}/auth/login',
+              headers: [
+                { id: 'h1', enabled: true, key: 'Content-Type', value: 'application/json' },
+                { id: 'h2', enabled: true, key: 'Accept', value: 'application/json' }
+              ],
+              params: [],
+              body: JSON.stringify({ email: '{{adminEmail}}', password: '{{adminPassword}}' }, null, 2),
+              extractionRules: [
+                { id: 'e1', variableName: 'step1_token', jsonPath: 'token', description: 'Dynamic JWT Bearer Token' }
+              ]
+            },
+            {
+              id: 'step_2',
+              name: '2. Query Corporate User Directory',
+              method: 'GET',
+              url: '{{baseUrl}}/admin/users',
+              headers: [
+                { id: 'h1', enabled: true, key: 'Authorization', value: 'Bearer {{step1_token}}' },
+                { id: 'h2', enabled: true, key: 'Accept', value: 'application/json' }
+              ],
+              params: [],
+              body: '',
+              extractionRules: []
+            }
+          ]);
+        }
       }
     } catch (err) {
-      console.error('Failed to load API pipeline for project:', err);
+      console.error('Failed to fetch api pipeline:', err);
     } finally {
       setIsLoadingPipeline(false);
     }
-  }, []);
+  }, [projectId]);
 
-  // Load environments and pipeline whenever active project changes
   useEffect(() => {
-    if (projectId) {
-      loadEnvironments(projectId);
-      loadPipeline(projectId);
-      setRuntimeVars({});
-      setStepResults({});
-      setPipelineLogs([]);
-    }
-  }, [projectId, loadEnvironments, loadPipeline]);
+    fetchEnvironments();
+    fetchPipeline();
+    setRuntimeVars({});
+    setStepExecutions({});
+    setActiveStepIndex(0);
+  }, [projectId, fetchEnvironments, fetchPipeline]);
 
   // Save Pipeline to Backend
-  const handleSavePipeline = async () => {
-    setIsSavingPipeline(true);
-    setPipelineSaveStatus(null);
+  const handleSavePipeline = async (updatedSteps = steps) => {
     try {
+      setIsSavingPipeline(true);
+      setPipelineSaveStatus(null);
       const token = localStorage.getItem('authToken');
       const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-pipeline`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({
-          name: 'Project API Pipeline',
-          steps: steps
-        })
+        body: JSON.stringify({ steps: updatedSteps })
       });
-      const data = await res.json();
-      if (res.ok && (data.steps || data.pipeline || data.success)) {
-        setPipelineSaveStatus({ type: 'success', msg: 'Pipeline saved successfully!' });
+      if (res.ok) {
+        setPipelineSaveStatus({ type: 'success', message: 'Pipeline configuration saved!' });
+        setTimeout(() => setPipelineSaveStatus(null), 3000);
       } else {
-        setPipelineSaveStatus({ type: 'error', msg: data.error || data.message || 'Failed to save pipeline' });
+        setPipelineSaveStatus({ type: 'error', message: 'Failed to save pipeline configuration' });
       }
     } catch (err) {
-      setPipelineSaveStatus({ type: 'error', msg: err.message });
+      console.error('Error saving pipeline:', err);
+      setPipelineSaveStatus({ type: 'error', message: 'Network error saving pipeline' });
     } finally {
       setIsSavingPipeline(false);
-      setTimeout(() => setPipelineSaveStatus(null), 3000);
     }
   };
 
-  // Reset Pipeline to Default Template
+  // Reset Pipeline to default template
   const handleResetPipeline = async () => {
-    if (!window.confirm("Reset this project's API Pipeline to the default 2-Step template?")) {
-      return;
-    }
-    setIsLoadingPipeline(true);
+    if (!window.confirm('Reset this project\'s API pipeline to the default banking authentication & directory template?')) return;
     try {
+      setIsLoadingPipeline(true);
       const token = localStorage.getItem('authToken');
       const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-pipeline/reset`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
-      const data = await res.json();
-      const pipe = data.pipeline || data;
-      if (pipe && pipe.steps) {
-        setSteps(pipe.steps);
+      if (res.ok) {
+        const data = await res.json();
+        setSteps(data.pipeline?.steps || []);
         setActiveStepIndex(0);
-        setStepResults({});
         setRuntimeVars({});
-        setPipelineSaveStatus({ type: 'success', msg: 'Reset to default template!' });
+        setStepExecutions({});
+        setPipelineSaveStatus({ type: 'success', message: 'Pipeline reset to default template!' });
+        setTimeout(() => setPipelineSaveStatus(null), 3000);
       }
     } catch (err) {
       console.error('Failed to reset pipeline:', err);
     } finally {
       setIsLoadingPipeline(false);
-      setTimeout(() => setPipelineSaveStatus(null), 3000);
     }
   };
 
-  // Add a New Step / Phase
-  const handleAddStep = () => {
-    const newStep = createDefaultStep(steps.length + 1);
-    const updatedSteps = [...steps, newStep];
-    setSteps(updatedSteps);
-    setActiveStepIndex(updatedSteps.length - 1);
+  // Step Mutation Handlers
+  const handleUpdateActiveStep = (updatedFields) => {
+    setSteps(prev => prev.map((step, idx) => idx === activeStepIndex ? { ...step, ...updatedFields } : step));
   };
 
-  // Delete a Step
+  const handleAddStep = () => {
+    const newStep = createDefaultStep(steps.length + 1);
+    const updated = [...steps, newStep];
+    setSteps(updated);
+    setActiveStepIndex(updated.length - 1);
+    handleSavePipeline(updated);
+  };
+
   const handleDeleteStep = (indexToDelete, e) => {
     if (e) e.stopPropagation();
     if (steps.length <= 1) {
       alert('Pipeline must have at least one step.');
       return;
     }
-    if (window.confirm(`Delete Step ${indexToDelete + 1} (${steps[indexToDelete].name})?`)) {
-      const updatedSteps = steps.filter((_, idx) => idx !== indexToDelete);
-      setSteps(updatedSteps);
-      if (activeStepIndex >= updatedSteps.length) {
-        setActiveStepIndex(updatedSteps.length - 1);
-      } else if (activeStepIndex === indexToDelete) {
-        setActiveStepIndex(Math.max(0, indexToDelete - 1));
-      }
-    }
-  };
-
-  // Move Step Up
-  const handleMoveStepUp = (index, e) => {
-    if (e) e.stopPropagation();
-    if (index === 0) return;
-    const updated = [...steps];
-    const temp = updated[index];
-    updated[index] = updated[index - 1];
-    updated[index - 1] = temp;
+    const updated = steps.filter((_, idx) => idx !== indexToDelete);
     setSteps(updated);
-    setActiveStepIndex(index - 1);
+    if (activeStepIndex >= updated.length) {
+      setActiveStepIndex(Math.max(0, updated.length - 1));
+    }
+    handleSavePipeline(updated);
   };
 
-  // Move Step Down
-  const handleMoveStepDown = (index, e) => {
+  const handleMoveStep = (fromIndex, toIndex, e) => {
     if (e) e.stopPropagation();
-    if (index === steps.length - 1) return;
+    if (toIndex < 0 || toIndex >= steps.length) return;
     const updated = [...steps];
-    const temp = updated[index];
-    updated[index] = updated[index + 1];
-    updated[index + 1] = temp;
+    const [moved] = updated.splice(fromIndex, 1);
+    updated.splice(toIndex, 0, moved);
     setSteps(updated);
-    setActiveStepIndex(index + 1);
+    setActiveStepIndex(toIndex);
+    handleSavePipeline(updated);
   };
 
-  // Update a specific field in the active step
-  const updateActiveStep = (updater) => {
-    setSteps(prev => {
-      const updated = [...prev];
-      if (typeof updater === 'function') {
-        updated[activeStepIndex] = updater(updated[activeStepIndex]);
-      } else {
-        updated[activeStepIndex] = { ...updated[activeStepIndex], ...updater };
-      }
-      return updated;
-    });
-  };
+  // Execute a single step with provided context variables
+  const executeStep = async (step, contextVars) => {
+    const startTime = performance.now();
+    const stepId = step.id;
 
-  // Create a New Custom Environment
-  const handleCreateEnvironment = async () => {
-    if (!newEnvName.trim()) return;
-    setIsCreatingEnv(true);
+    // Set step as executing
+    setStepExecutions(prev => ({
+      ...prev,
+      [stepId]: { ...(prev[stepId] || {}), isExecuting: true, isError: false }
+    }));
+
     try {
-      const token = localStorage.getItem('authToken');
-      const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-environments`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          name: newEnvName.trim(),
-          variables: [
-            { key: 'baseUrl', value: 'http://127.0.0.1:5000/api' },
-            { key: 'apiKey', value: 'bahl_custom_key_123' }
-          ]
-        })
-      });
-      const data = await res.json();
-      const newEnv = data.environment || data;
-      if (newEnv && newEnv.id) {
-        setEnvironments(prev => [...prev, newEnv]);
-        setActiveEnvId(newEnv.id);
-        setNewEnvName('');
+      // 1. Interpolate URL
+      let targetUrl = interpolateVariables(step.url, contextVars);
+
+      // 2. Query Params
+      if (Array.isArray(step.params) && step.params.length > 0) {
+        const enabledParams = step.params.filter(p => p.enabled && p.key);
+        if (enabledParams.length > 0) {
+          const urlObj = new URL(targetUrl.startsWith('http') ? targetUrl : `http://127.0.0.1:5000${targetUrl.startsWith('/') ? '' : '/'}${targetUrl}`);
+          enabledParams.forEach(p => {
+            urlObj.searchParams.set(interpolateVariables(p.key, contextVars), interpolateVariables(p.value, contextVars));
+          });
+          targetUrl = urlObj.toString();
+        }
       }
+
+      // 3. Interpolate Headers
+      const requestHeaders = {};
+      if (Array.isArray(step.headers)) {
+        step.headers.filter(h => h.enabled && h.key).forEach(h => {
+          requestHeaders[interpolateVariables(h.key, contextVars)] = interpolateVariables(h.value, contextVars);
+        });
+      }
+
+      // 4. Interpolate Body
+      let requestBody = null;
+      if (['POST', 'PUT', 'PATCH'].includes(step.method) && step.body) {
+        requestBody = interpolateVariables(step.body, contextVars);
+      }
+
+      // 5. Execute HTTP Request
+      const fetchOptions = {
+        method: step.method,
+        headers: requestHeaders
+      };
+      if (requestBody && ['POST', 'PUT', 'PATCH'].includes(step.method)) {
+        fetchOptions.body = requestBody;
+      }
+
+      const res = await fetch(targetUrl, fetchOptions);
+      const endTime = performance.now();
+      const responseTime = Math.round(endTime - startTime);
+
+      // Extract response headers
+      const resHeaders = {};
+      res.headers.forEach((val, key) => {
+        resHeaders[key] = val;
+      });
+
+      // Parse payload
+      let responseData = null;
+      let rawText = '';
+      try {
+        rawText = await res.text();
+        responseData = JSON.parse(rawText);
+      } catch {
+        responseData = rawText;
+      }
+
+      const responseSize = rawText ? (new TextEncoder().encode(rawText).length / 1024).toFixed(2) : '0.00';
+
+      // 6. Execute Variable Extractions
+      const newlyExtracted = {};
+      if (Array.isArray(step.extractionRules) && step.extractionRules.length > 0 && typeof responseData === 'object') {
+        step.extractionRules.forEach(rule => {
+          if (rule.variableName && rule.jsonPath) {
+            const val = extractJsonPath(responseData, rule.jsonPath);
+            if (val !== undefined) {
+              newlyExtracted[rule.variableName] = typeof val === 'object' ? JSON.stringify(val) : val;
+            }
+          }
+        });
+      }
+
+      const execResult = {
+        isExecuting: false,
+        response: responseData,
+        responseStatus: res.status,
+        responseStatusText: res.statusText,
+        responseTime,
+        responseSize: `${responseSize} KB`,
+        responseHeaders: resHeaders,
+        isError: !res.ok,
+        extractedVariables: newlyExtracted,
+        lastExecutedAt: new Date().toISOString()
+      };
+
+      setStepExecutions(prev => ({
+        ...prev,
+        [stepId]: execResult
+      }));
+
+      // Update global runtime vars with extracted items
+      if (Object.keys(newlyExtracted).length > 0) {
+        setRuntimeVars(prev => ({ ...prev, ...newlyExtracted }));
+      }
+
+      return {
+        success: res.ok,
+        extracted: newlyExtracted,
+        result: execResult
+      };
     } catch (err) {
-      console.error('Failed to create environment:', err);
-    } finally {
-      setIsCreatingEnv(false);
+      const endTime = performance.now();
+      const errorResult = {
+        isExecuting: false,
+        response: { error: err.message || 'Network request failed' },
+        responseStatus: 0,
+        responseStatusText: 'Network Error',
+        responseTime: Math.round(endTime - startTime),
+        responseSize: '0.00 KB',
+        responseHeaders: {},
+        isError: true,
+        extractedVariables: {},
+        lastExecutedAt: new Date().toISOString()
+      };
+
+      setStepExecutions(prev => ({
+        ...prev,
+        [stepId]: errorResult
+      }));
+
+      return { success: false, extracted: {}, result: errorResult };
     }
   };
 
-  // Save Environment Variables to Backend
-  const handleSaveEnvironment = async (envToSave) => {
-    setEnvSaveStatus({ envId: envToSave.id, status: 'saving' });
-    try {
-      const token = localStorage.getItem('authToken');
-      const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-environments/${envToSave.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          name: envToSave.name,
-          variables: envToSave.variables
-        })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setEnvSaveStatus({ envId: envToSave.id, status: 'success', msg: 'Environment variables saved!' });
-      } else {
-        setEnvSaveStatus({ envId: envToSave.id, status: 'error', msg: data.error || data.message || 'Save failed' });
-      }
-    } catch (err) {
-      setEnvSaveStatus({ envId: envToSave.id, status: 'error', msg: err.message });
-    } finally {
-      setTimeout(() => setEnvSaveStatus(null), 2500);
-    }
+  // Run single active step
+  const handleRunActiveStep = async () => {
+    if (!activeStep) return;
+    setViewingSavedResponse(false);
+    await executeStep(activeStep, mergedVariables);
   };
 
-  // Delete Environment
-  const handleDeleteEnvironment = async (envId) => {
-    if (environments.length <= 1) {
-      alert('Cannot delete the last remaining environment.');
+  // Run full chained multi-step pipeline sequentially
+  const handleRunChainedPipeline = async () => {
+    if (steps.length === 0 || isPipelineRunning) return;
+    setIsPipelineRunning(true);
+    setViewingSavedResponse(false);
+    setPipelineProgress({ current: 0, total: steps.length, status: 'running' });
+
+    let currentContext = { ...(activeEnv?.variables || {}) };
+    let accumulatedRuntime = {};
+
+    for (let i = 0; i < steps.length; i++) {
+      setPipelineProgress({ current: i + 1, total: steps.length, status: 'running' });
+      setActiveStepIndex(i);
+
+      const step = steps[i];
+      const mergedForStep = { ...currentContext, ...accumulatedRuntime };
+
+      const res = await executeStep(step, mergedForStep);
+
+      // Merge newly extracted variables into subsequent step contexts
+      if (res.extracted && Object.keys(res.extracted).length > 0) {
+        accumulatedRuntime = { ...accumulatedRuntime, ...res.extracted };
+        currentContext = { ...currentContext, ...res.extracted };
+      }
+
+      await new Promise(r => setTimeout(r, 400));
+    }
+
+    setPipelineProgress({ current: steps.length, total: steps.length, status: 'completed' });
+    setIsPipelineRunning(false);
+  };
+
+  // Save Response for the active step
+  const handleSaveResponse = async () => {
+    if (!activeStep) return;
+    const currentExec = stepExecutions[activeStep.id];
+    if (!currentExec || !currentExec.response) {
+      alert('Execute the step first to receive a live response to save.');
       return;
     }
-    if (!window.confirm('Are you sure you want to delete this environment?')) return;
 
+    const savedData = {
+      savedAt: new Date().toISOString(),
+      statusCode: currentExec.responseStatus,
+      statusText: currentExec.responseStatusText,
+      responseTime: currentExec.responseTime,
+      responseSize: currentExec.responseSize,
+      responseHeaders: currentExec.responseHeaders,
+      responseBody: currentExec.response
+    };
+
+    const updatedSteps = steps.map((s, idx) => {
+      if (idx === activeStepIndex) {
+        return { ...s, savedResponse: savedData };
+      }
+      return s;
+    });
+
+    setSteps(updatedSteps);
+    await handleSavePipeline(updatedSteps);
+
+    setToastMessage(`Response saved successfully for Phase #${activeStepIndex + 1}!`);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Check if live response differs from saved response
+  const savedResponseComparison = useMemo(() => {
+    if (!activeStep?.savedResponse) return null;
+    const currentExec = stepExecutions[activeStep.id];
+    if (!currentExec || !currentExec.response) {
+      return { hasSaved: true, hasLive: false, isMatch: null, savedAt: activeStep.savedResponse.savedAt };
+    }
+    const liveStr = JSON.stringify(currentExec.response);
+    const savedStr = JSON.stringify(activeStep.savedResponse.responseBody);
+    return {
+      hasSaved: true,
+      hasLive: true,
+      isMatch: liveStr === savedStr,
+      savedAt: activeStep.savedResponse.savedAt
+    };
+  }, [activeStep, stepExecutions]);
+
+  // Snippet Drawer Handlers (Smart Merge & Body Replacement)
+  const handleApplySnippet = (snippet) => {
+    if (!activeStep) return;
+    const isHeadersScope = snippet.scope === 'headers' || snippet.target_scope === 'headers';
+
+    if (isHeadersScope) {
+      // Parse incoming headers
+      let incomingHeaders = [];
+      try {
+        const parsed = typeof snippet.content === 'string' ? JSON.parse(snippet.content) : snippet.content;
+        if (Array.isArray(parsed)) {
+          incomingHeaders = parsed;
+        } else if (typeof parsed === 'object' && parsed !== null) {
+          incomingHeaders = Object.entries(parsed).map(([k, v]) => ({
+            id: `h_${Date.now()}_${k}`,
+            key: k,
+            value: String(v),
+            enabled: true
+          }));
+        }
+      } catch {
+        if (typeof snippet.content === 'string') {
+          snippet.content.split('\n').forEach((line, idx) => {
+            const [k, ...v] = line.split(':');
+            if (k && v.length) {
+              incomingHeaders.push({
+                id: `h_${Date.now()}_${idx}`,
+                key: k.trim(),
+                value: v.join(':').trim(),
+                enabled: true
+              });
+            }
+          });
+        }
+      }
+
+      // Merge headers without erasing existing ones
+      const existingHeaders = [...(activeStep.headers || [])];
+      incomingHeaders.forEach(inH => {
+        const existingIdx = existingHeaders.findIndex(h => h.key.toLowerCase() === inH.key.toLowerCase());
+        if (existingIdx >= 0) {
+          existingHeaders[existingIdx] = { ...existingHeaders[existingIdx], value: inH.value, enabled: true };
+        } else {
+          existingHeaders.push({
+            id: inH.id || `h_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+            key: inH.key,
+            value: inH.value,
+            enabled: inH.enabled !== false
+          });
+        }
+      });
+
+      handleUpdateActiveStep({ headers: existingHeaders });
+      setActiveTab('headers');
+    } else {
+      // Body scope replacement/insertion
+      handleUpdateActiveStep({
+        body: typeof snippet.content === 'string' ? snippet.content : JSON.stringify(snippet.content, null, 2),
+        ...(snippet.method ? { method: snippet.method } : {})
+      });
+      setActiveTab('body');
+    }
+
+    setShowSnippetDrawer(false);
+    setToastMessage(`Snippet successfully applied to Phase #${activeStepIndex + 1}: ${activeStep.name}`);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleInsertVariable = (varName) => {
+    const varTag = `{{${varName}}}`;
+    if (activeTab === 'body') {
+      const currentBody = activeStep.body || '';
+      handleUpdateActiveStep({ body: currentBody + (currentBody ? '\n' : '') + varTag });
+    } else {
+      const currentUrl = activeStep.url || '';
+      handleUpdateActiveStep({ url: currentUrl + varTag });
+    }
+  };
+
+  // Custom Environment Management Modal Handlers
+  const handleOpenNewEnvModal = () => {
+    setIsEnvDropdownOpen(false);
+    setEditingEnv({
+      id: '',
+      name: '',
+      isBuiltin: false,
+      variables: {
+        baseUrl: 'http://127.0.0.1:5000/api',
+        apiKey: '',
+        bearerToken: ''
+      }
+    });
+    setShowEnvModal(true);
+  };
+
+  const handleOpenEditEnvModal = (env, e) => {
+    if (e) e.stopPropagation();
+    if (env.isBuiltin) return;
+    setIsEnvDropdownOpen(false);
+    setEditingEnv(JSON.parse(JSON.stringify(env)));
+    setShowEnvModal(true);
+  };
+
+  const handleSaveCustomEnv = async () => {
+    if (!editingEnv || !editingEnv.name.trim()) {
+      alert('Please enter an environment name.');
+      return;
+    }
+
+    try {
+      setEnvSaveStatus({ type: 'loading', message: 'Saving environment...' });
+      const token = localStorage.getItem('authToken');
+      const isNew = !editingEnv.id;
+
+      const url = `http://127.0.0.1:5000/api/projects/${projectId}/api-environments${isNew ? '' : `/${editingEnv.id}`}`;
+      const method = isNew ? 'POST' : 'PUT';
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          name: editingEnv.name,
+          variables: editingEnv.variables || {}
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        await fetchEnvironments();
+        if (data && data.id) {
+          setActiveEnvId(String(data.id));
+        }
+        setShowEnvModal(false);
+        setEditingEnv(null);
+        setEnvSaveStatus(null);
+      } else {
+        setEnvSaveStatus({ type: 'error', message: 'Failed to save environment.' });
+      }
+    } catch (err) {
+      console.error('Error saving environment:', err);
+      setEnvSaveStatus({ type: 'error', message: 'Network error.' });
+    }
+  };
+
+  const handleDeleteCustomEnv = async (envId, e) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm('Are you sure you want to delete this custom environment?')) return;
     try {
       const token = localStorage.getItem('authToken');
       const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-environments/${envId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
-      const data = await res.json();
       if (res.ok) {
-        const remaining = environments.filter(e => e.id !== envId);
-        setEnvironments(remaining);
-        if (activeEnvId === envId) {
-          setActiveEnvId(remaining[0]?.id || null);
+        if (activeEnvId === envId || String(activeEnvId) === String(envId)) {
+          setActiveEnvId('local');
         }
+        await fetchEnvironments();
       }
     } catch (err) {
-      console.error('Failed to delete environment:', err);
+      console.error('Error deleting environment:', err);
     }
-  };
-
-  // Execute a single step
-  const executeStep = async (stepIndex, customRuntime = runtimeVars) => {
-    const step = steps[stepIndex];
-    if (!step) return { success: false };
-
-    setExecutingStepIndex(stepIndex);
-
-    try {
-      // 1. Resolve URL with variables
-      let resolvedUrl = (step.url || '').replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (m, key) => {
-        if (customRuntime[key] !== undefined) return customRuntime[key];
-        const v = activeEnv?.variables?.find(item => item.key === key);
-        return v ? v.value : m;
-      });
-
-      // 2. Resolve Headers
-      const resolvedHeaders = {};
-      (step.headers || []).filter(h => h.enabled && h.key && h.key.trim()).forEach(h => {
-        const resolvedVal = (h.value || '').replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (m, key) => {
-          if (customRuntime[key] !== undefined) return customRuntime[key];
-          const v = activeEnv?.variables?.find(item => item.key === key);
-          return v ? v.value : m;
-        });
-        resolvedHeaders[h.key.trim()] = resolvedVal;
-      });
-
-      // 3. Resolve Query Params
-      const resolvedParams = {};
-      (step.params || []).filter(p => p.enabled && p.key && p.key.trim()).forEach(p => {
-        const resolvedVal = (p.value || '').replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (m, key) => {
-          if (customRuntime[key] !== undefined) return customRuntime[key];
-          const v = activeEnv?.variables?.find(item => item.key === key);
-          return v ? v.value : m;
-        });
-        resolvedParams[p.key.trim()] = resolvedVal;
-      });
-
-      // 4. Resolve Body
-      let resolvedBody = null;
-      if (step.method !== 'GET' && step.body) {
-        let bodyStr = (step.body || '').replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (m, key) => {
-          if (customRuntime[key] !== undefined) return customRuntime[key];
-          const v = activeEnv?.variables?.find(item => item.key === key);
-          return v ? v.value : m;
-        });
-        try {
-          resolvedBody = JSON.parse(bodyStr);
-        } catch {
-          resolvedBody = bodyStr;
-        }
-      }
-
-      // Dispatch to backend proxy
-      const token = localStorage.getItem('authToken');
-      const res = await fetch('http://127.0.0.1:5000/api/proxy/execute', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          method: step.method,
-          url: resolvedUrl,
-          headers: resolvedHeaders,
-          params: resolvedParams,
-          body: resolvedBody
-        })
-      });
-
-      const data = await res.json();
-      setStepResults(prev => ({ ...prev, [step.id]: data }));
-
-      // Extract variables if rules defined and response succeeded
-      let updatedRuntime = { ...customRuntime };
-      if (data.status_code >= 200 && data.status_code < 300 && step.extractionRules && step.extractionRules.length > 0) {
-        step.extractionRules.forEach(rule => {
-          if (rule.targetVar && rule.sourcePath) {
-            const val = getNestedValue(data.data, rule.sourcePath);
-            if (val !== undefined) {
-              updatedRuntime[rule.targetVar] = val;
-            }
-          }
-        });
-        setRuntimeVars(updatedRuntime);
-      }
-
-      const isSuccess = data.status_code >= 200 && data.status_code < 300;
-      return { success: isSuccess, data, extracted: updatedRuntime };
-
-    } catch (err) {
-      const errPayload = {
-        status_code: 500,
-        status_text: 'Client Execution Failed',
-        time_ms: 0,
-        size_bytes: 0,
-        headers: {},
-        data: { error: err.message },
-        is_json: true
-      };
-      setStepResults(prev => ({ ...prev, [step.id]: errPayload }));
-      return { success: false, data: errPayload, extracted: customRuntime };
-    } finally {
-      setExecutingStepIndex(null);
-    }
-  };
-
-  // Headless Multi-Step Automated Chained Pipeline Runner
-  const runChainedPipeline = async () => {
-    if (steps.length === 0) return;
-    setIsRunningPipeline(true);
-    setPipelineLogs([]);
-
-    const addLog = (msg, type = 'info') => {
-      setPipelineLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), msg, type }]);
-    };
-
-    addLog(`[INIT] Initializing Multi-Phase Chained Pipeline for Project: "${currentProject.name}"`, 'info');
-    addLog(`Environment: ${activeEnv.name} | Total Pipeline Steps: ${steps.length}`, 'info');
-
-    let currentContext = { ...runtimeVars };
-
-    for (let i = 0; i < steps.length; i++) {
-      const step = steps[i];
-      addLog(`----------------------------------------`, 'info');
-      addLog(`[RUN] Executing Step ${i + 1}/${steps.length}: [${step.method}] ${step.name}`, 'info');
-      setActiveStepIndex(i);
-
-      const result = await executeStep(i, currentContext);
-
-      if (!result.success) {
-        addLog(`[ERROR] Step ${i + 1} FAILED with HTTP ${result.data?.status_code || 500} (${result.data?.status_text || 'Error'}).`, 'error');
-        addLog(`[HALTED] Pipeline halted at Step ${i + 1}. Subsequent steps will NOT be executed.`, 'error');
-        setIsRunningPipeline(false);
-        return;
-      }
-
-      addLog(`[SUCCESS] Step ${i + 1} Succeeded! HTTP ${result.data.status_code} in ${result.data.time_ms}ms.`, 'success');
-
-      // Check variable extractions
-      if (step.extractionRules && step.extractionRules.length > 0) {
-        step.extractionRules.forEach(r => {
-          if (r.targetVar && result.extracted[r.targetVar] !== undefined) {
-            const previewVal = String(result.extracted[r.targetVar]);
-            addLog(`  [EXTRACT] Extracted {{${r.targetVar}}}: ${previewVal.length > 25 ? previewVal.substring(0, 25) + '...' : previewVal}`, 'success');
-          } else if (r.targetVar) {
-            addLog(`  [WARN] Extraction warning: Path "${r.sourcePath}" not found in response for {{${r.targetVar}}}`, 'error');
-          }
-        });
-      }
-
-      currentContext = { ...result.extracted };
-
-      // Small sequential pause for visual tracking
-      if (i < steps.length - 1) {
-        await new Promise(r => setTimeout(r, 450));
-      }
-    }
-
-    addLog(`----------------------------------------`, 'info');
-    addLog(`[COMPLETE] Chained Pipeline completed successfully across all ${steps.length} steps with 100% data integrity.`, 'success');
-    setIsRunningPipeline(false);
   };
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${
-      isDarkMode ? 'bg-[#0b0c16] text-zinc-100' : 'bg-slate-50 text-slate-900'
-    }`}>
+    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
       
-      {/* TOP STUDIO NAVIGATION & CONTROL BAR */}
-      <header className={`h-14 border-b px-4 flex items-center justify-between shrink-0 transition z-10 ${
-        isDarkMode ? 'bg-[#121422] border-zinc-800/80' : 'bg-white border-slate-200 shadow-xs'
+      {/* ========================================================================= */}
+      {/* 1. CLEAN, STREAMLINED SINGLE-LINE TOOLBAR                                 */}
+      {/* ========================================================================= */}
+      <header className={`h-14 px-4 border-b flex items-center justify-between gap-3 sticky top-0 z-30 transition-colors ${
+        isDarkMode ? 'bg-slate-900/90 border-slate-800/80 backdrop-blur-md' : 'bg-white/95 border-slate-200/90 backdrop-blur-md shadow-sm'
       }`}>
-        {/* Left Section: Back button, Logo, Project Scope Selector */}
-        <div className="flex items-center space-x-3">
+        
+        {/* Left: Navigation & Studio Title */}
+        <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className={`flex items-center space-x-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg border transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
               isDarkMode 
-                ? 'bg-zinc-850 hover:bg-zinc-800 border-zinc-750 text-zinc-200' 
-                : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700 shadow-2xs'
+                ? 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white hover:border-slate-600' 
+                : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
             }`}
-            title="Return to SDLC Governance Board"
+            title="Return to Kanban Board"
           >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            <span>Back to Board</span>
+            <ArrowLeft size={16} />
+            {/* <span>Back to Board</span> */}
           </button>
 
-          <div className="h-4 w-px bg-zinc-700/50" />
+          {/* <div className="h-4 w-px bg-slate-700/50" />
 
-          {/* Logo & Studio Branding */}
-          <div className="flex items-center space-x-2">
-            <div className="w-7 h-7 rounded-lg bg-white/95 border border-emerald-500/30 p-0.5 flex items-center justify-center shadow-xs">
-              <img src={bahlLogo} alt="Bank AL Habib" className="w-full h-full object-contain" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-xs sm:text-sm tracking-tight">API Execution Studio</span>
-                <span className="text-[9.5px] font-black tracking-wider uppercase px-1.5 py-0.2 rounded bg-purple-500/15 text-purple-400 border border-purple-500/30">
-                  Project Bound
-                </span>
-              </div>
-            </div>
-          </div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-bold tracking-tight">API Execution Studio</h1>
+          </div> */}
+        </div>
 
-          <div className="h-4 w-px bg-zinc-700/50 hidden md:block" />
-
-          {/* Active Project Selector */}
-          <div className="hidden md:flex items-center space-x-1.5">
-            <FolderGit2 className="h-3.5 w-3.5 text-purple-400 shrink-0" />
-            <span className="text-[11px] font-bold text-zinc-400">Project:</span>
-            {projects && projects.length > 0 ? (
+        {/* Center: Clean Project & Custom Environment Selectors */}
+        <div className="flex items-center gap-2.5 max-w-xl flex-1 justify-center">
+          {/* Project Selector */}
+          {projects && projects.length > 0 && onSelectProject && (
+            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs ${
+              isDarkMode ? 'bg-slate-800/70 border-slate-700/80 text-slate-300' : 'bg-slate-100/90 border-slate-200 text-slate-700'
+            }`}>
+              <FolderGit2 size={14} className="text-purple-400 shrink-0" />
               <select
+                id="api-project-select"
                 value={projectId}
-                onChange={e => {
-                  const selected = projects.find(p => p.id === parseInt(e.target.value));
-                  if (selected && onSelectProject) onSelectProject(selected);
-                }}
-                className={`text-xs font-bold px-2 py-1 rounded-lg border focus:outline-hidden cursor-pointer max-w-[180px] truncate ${
-                  isDarkMode ? 'bg-[#181a30] border-zinc-750 text-purple-300' : 'bg-slate-100 border-slate-300 text-purple-800'
-                }`}
+                onChange={(e) => onSelectProject(Number(e.target.value))}
+                className="bg-transparent border-none focus:outline-none text-xs font-semibold cursor-pointer max-w-[200px] truncate"
               >
                 {projects.map(p => (
-                  <option key={p.id} value={p.id} className={isDarkMode ? 'bg-zinc-900 text-zinc-100' : 'bg-white text-slate-900'}>
+                  <option key={p.id} value={p.id} className={isDarkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-slate-800'}>
                     {p.name}
                   </option>
                 ))}
               </select>
-            ) : (
-              <span className="text-xs font-bold text-purple-400 truncate max-w-[160px]">{currentProject?.name}</span>
+            </div>
+          )}
+
+          {/* Custom Popover Environment Selector (High Visibility & Clean Theme) */}
+          <div className="relative" ref={envDropdownRef}>
+            <button
+              id="api-environment-btn"
+              onClick={() => setIsEnvDropdownOpen(!isEnvDropdownOpen)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+                isDarkMode 
+                  ? 'bg-slate-800/80 border-slate-700 text-slate-200 hover:bg-slate-800 hover:border-slate-600' 
+                  : 'bg-slate-100 border-slate-200 text-slate-800 hover:bg-slate-200'
+              }`}
+            >
+              <Globe size={14} className="text-emerald-400 shrink-0" />
+              <span className="max-w-[150px] truncate">{activeEnv?.name || 'Local Backend'}</span>
+              <ChevronDown size={13} className={`text-slate-400 shrink-0 transition-transform ${isEnvDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Floating Dropdown Popover */}
+            {isEnvDropdownOpen && (
+              <div className={`absolute left-0 mt-1.5 w-64 rounded-xl border shadow-2xl p-1.5 z-50 animate-fade-in ${
+                isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
+              }`}>
+                {/* Standard Environments Group */}
+                <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Standard Environments
+                </div>
+                <div className="flex flex-col gap-0.5 mb-1">
+                  {BUILTIN_ENVIRONMENTS.map(env => {
+                    const isSelected = String(activeEnvId) === String(env.id);
+                    return (
+                      <button
+                        key={env.id}
+                        onClick={() => {
+                          setActiveEnvId(env.id);
+                          setIsEnvDropdownOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                          isSelected
+                            ? isDarkMode ? 'bg-purple-950/50 text-purple-300 font-bold' : 'bg-purple-50 text-purple-700 font-bold'
+                            : isDarkMode ? 'hover:bg-slate-800/80 text-slate-300' : 'hover:bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        <span className="truncate">{env.name}</span>
+                        {isSelected && <Check size={13} className="text-emerald-400 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Custom Environments Group */}
+                {filteredCustomEnvs.length > 0 && (
+                  <>
+                    <div className="h-px bg-slate-800/80 my-1" />
+                    <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                      <span>Custom Environments</span>
+                      <span className="text-[9px] font-mono">{filteredCustomEnvs.length}</span>
+                    </div>
+                    <div className="flex flex-col gap-0.5 mb-1">
+                      {filteredCustomEnvs.map(env => {
+                        const isSelected = String(activeEnvId) === String(env.id);
+                        return (
+                          <div
+                            key={env.id}
+                            onClick={() => {
+                              setActiveEnvId(env.id);
+                              setIsEnvDropdownOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer group ${
+                              isSelected
+                                ? isDarkMode ? 'bg-purple-950/50 text-purple-300 font-bold' : 'bg-purple-50 text-purple-700 font-bold'
+                                : isDarkMode ? 'hover:bg-slate-800/80 text-slate-300' : 'hover:bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            <span className="truncate">{env.name}</span>
+                            <div className="flex items-center gap-1">
+                              {isSelected && <Check size={13} className="text-emerald-400 shrink-0" />}
+                              <button
+                                onClick={(e) => handleOpenEditEnvModal(env, e)}
+                                className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-slate-700/50 text-slate-400 hover:text-white transition-all"
+                                title="Edit environment"
+                              >
+                                <Edit2 size={11} />
+                              </button>
+                              <button
+                                onClick={(e) => handleDeleteCustomEnv(env.id, e)}
+                                className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-rose-950/50 text-slate-400 hover:text-rose-400 transition-all"
+                                title="Delete environment"
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                <div className="h-px bg-slate-800/80 my-1" />
+
+                {/* Footer Action: + Create Custom Environment */}
+                <button
+                  onClick={handleOpenNewEnvModal}
+                  className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                    isDarkMode 
+                      ? 'text-purple-400 hover:bg-purple-950/40 hover:text-purple-300' 
+                      : 'text-purple-700 hover:bg-purple-50'
+                  }`}
+                >
+                  <PlusCircle size={14} className="text-purple-400 shrink-0" />
+                  <span>Create Custom Environment</span>
+                </button>
+              </div>
             )}
           </div>
         </div>
 
-        {/* Right Section: Environment Switcher, Pipeline Actions, Run Pipeline */}
-        <div className="flex items-center space-x-2">
-          
-          {/* Status Feedback Toast */}
-          {pipelineSaveStatus && (
-            <div className={`text-[11px] font-bold px-2.5 py-1 rounded-lg flex items-center space-x-1 border animate-fade-in ${
-              pipelineSaveStatus.type === 'success'
-                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
-                : 'bg-rose-500/15 border-rose-500/30 text-rose-400'
-            }`}>
-              {pipelineSaveStatus.type === 'success' ? <CheckCheck className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
-              <span>{pipelineSaveStatus.msg}</span>
-            </div>
-          )}
-
-          {/* Environment Switcher Dropdown & Settings */}
-          <div className="flex items-center space-x-1">
-            <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs ${
-              isDarkMode ? 'bg-[#16182a] border-zinc-800 text-zinc-200' : 'bg-slate-100 border-slate-200 text-slate-800'
-            }`}>
-              <Globe className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-              {isLoadingEnvs ? (
-                <span className="text-[11px] text-zinc-400">Loading...</span>
-              ) : (
-                <select
-                  value={activeEnvId || ''}
-                  onChange={e => setActiveEnvId(parseInt(e.target.value) || e.target.value)}
-                  className="bg-transparent font-bold text-xs focus:outline-hidden cursor-pointer max-w-[130px] truncate"
-                >
-                  {environments.map(env => (
-                    <option key={env.id} value={env.id} className={isDarkMode ? 'bg-zinc-900 text-zinc-100' : 'bg-white text-slate-900'}>
-                      {env.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-
-            <button
-              onClick={() => setShowEnvModal(true)}
-              className={`p-1.5 rounded-lg border transition cursor-pointer ${
-                isDarkMode ? 'border-zinc-800 hover:bg-zinc-800 text-zinc-400' : 'border-slate-200 hover:bg-slate-100 text-slate-600'
-              }`}
-              title="Manage Environments & Variables"
-            >
-              <Settings2 className="h-4 w-4" />
-            </button>
-          </div>
-
-          <div className="h-4 w-px bg-zinc-700/50 hidden sm:block" />
-
-          {/* Reset to Defaults Button */}
+        {/* Right: Actions Toolbar */}
+        <div className="flex items-center gap-2">
+          {/* Snippets Drawer Toggle Button */}
           <button
-            onClick={handleResetPipeline}
-            disabled={isLoadingPipeline || isRunningPipeline}
-            className={`p-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
-              isDarkMode ? 'border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200' : 'border-slate-300 hover:bg-slate-100 text-slate-600'
+            onClick={() => setShowSnippetDrawer(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+              isDarkMode 
+                ? 'bg-purple-950/40 border-purple-800/60 text-purple-300 hover:bg-purple-900/60 hover:text-purple-100' 
+                : 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100'
             }`}
-            title="Reset Pipeline to Default Template"
+            title="Open Banking Payloads & Code Snippets Drawer"
           >
-            <RotateCcw className="h-3.5 w-3.5" />
-            <span className="hidden lg:inline">Reset</span>
+            <BookOpen size={14} className="text-purple-400" />
+            <span>Snippets</span>
           </button>
 
-          {/* Save Pipeline Button */}
+          {/* Reset Pipeline */}
           <button
-            onClick={handleSavePipeline}
-            disabled={isSavingPipeline || isLoadingPipeline}
-            className={`text-xs font-bold px-2.5 py-1.5 rounded-lg border flex items-center space-x-1 transition cursor-pointer ${
+            onClick={handleResetPipeline}
+            disabled={isLoadingPipeline || isPipelineRunning}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
               isDarkMode 
-                ? 'bg-zinc-850 hover:bg-zinc-800 border-purple-500/40 text-purple-300' 
-                : 'bg-white hover:bg-purple-50 border-purple-300 text-purple-700 shadow-2xs'
+                ? 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-800' 
+                : 'bg-slate-100 border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-200'
             }`}
-            title="Persist Pipeline Configuration for Current Project"
+            title="Reset to default pipeline template"
           >
-            {isSavingPipeline ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5 text-purple-400" />}
-            <span className="hidden sm:inline">Save Pipeline</span>
+            <RotateCcw size={14} className={isLoadingPipeline ? 'animate-spin' : ''} />
+            <span>Reset</span>
+          </button>
+
+          {/* Save Pipeline */}
+          <button
+            onClick={() => handleSavePipeline()}
+            disabled={isSavingPipeline || isPipelineRunning}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+              isDarkMode 
+                ? 'bg-slate-800/80 border-slate-700 text-slate-200 hover:bg-slate-800' 
+                : 'bg-slate-100 border-slate-200 text-slate-800 hover:bg-slate-200'
+            }`}
+            title="Save Pipeline configuration"
+          >
+            <Save size={14} className={isSavingPipeline ? 'animate-spin' : 'text-purple-400'} />
+            <span>Save Pipeline</span>
           </button>
 
           {/* Run Chained Pipeline Button */}
           <button
-            onClick={runChainedPipeline}
-            disabled={isRunningPipeline || steps.length === 0}
-            className={`text-xs font-black px-3.5 py-1.5 rounded-xl border flex items-center space-x-1.5 transition shadow-sm cursor-pointer ${
-              isRunningPipeline
-                ? 'bg-purple-700 text-white opacity-80 cursor-not-allowed'
-                : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white border-purple-400/30 shadow-purple-950/40'
+            onClick={handleRunChainedPipeline}
+            disabled={isPipelineRunning || steps.length === 0}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold text-white shadow-md transition-all active:scale-95 ${
+              isPipelineRunning
+                ? 'bg-purple-800 cursor-not-allowed opacity-80'
+                : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-600/25'
             }`}
-            title="Execute All Pipeline Phases Sequentially with Variable Injection"
           >
-            {isRunningPipeline ? (
+            {isPipelineRunning ? (
               <>
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                <span>Running ({steps.length} Steps)...</span>
+                <RefreshCw size={14} className="animate-spin" />
+                <span>Running ({pipelineProgress.current}/{pipelineProgress.total})...</span>
               </>
             ) : (
               <>
-                <Play className="h-3.5 w-3.5 fill-current" />
+                <Play size={14} className="fill-white" />
                 <span>Run Chained Pipeline</span>
               </>
             )}
@@ -750,993 +1055,1005 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
         </div>
       </header>
 
-      {/* MAIN STUDIO WORKSPACE */}
-      <div className="flex-1 flex overflow-hidden">
-        
-        {/* LEFT SIDEBAR: Dynamic Multi-Phase Pipeline Navigator */}
-        <aside className={`w-72 sm:w-80 border-r flex flex-col shrink-0 overflow-y-auto ${
-          isDarkMode ? 'bg-[#101220] border-zinc-800/80' : 'bg-white border-slate-200'
-        }`}>
-          
-          {/* Pipeline Header with Step Count & Add Step Button */}
-          <div className="p-3 border-b flex items-center justify-between">
-            <div className="flex items-center space-x-1.5">
-              <Layers className="h-4 w-4 text-violet-400" />
-              <span className="text-xs font-bold uppercase tracking-wider">Pipeline Phases</span>
+      {/* Unified Toast Notifications */}
+      {(toastMessage || pipelineSaveStatus) && (
+        <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2">
+          {toastMessage && (
+            <div className="px-4 py-2.5 rounded-xl bg-purple-600 text-white font-semibold text-xs shadow-xl flex items-center gap-2 animate-bounce">
+              <CheckCircle2 size={16} />
+              <span>{toastMessage}</span>
             </div>
-            
-            <div className="flex items-center space-x-2">
-              <span className="text-[10px] font-mono text-zinc-400 bg-zinc-800/40 px-1.5 py-0.5 rounded">
+          )}
+          {pipelineSaveStatus && (
+            <div className={`px-4 py-2.5 rounded-xl text-white font-semibold text-xs shadow-xl flex items-center gap-2 ${
+              pipelineSaveStatus.type === 'success' ? 'bg-purple-600' : 'bg-rose-600'
+            }`}>
+              {pipelineSaveStatus.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+              <span>{pipelineSaveStatus.message}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 2. MAIN STUDIO 3-COLUMN WORKSPACE                                         */}
+      {/* ========================================================================= */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+        
+        {/* ========================================== */}
+        {/* LEFT COLUMN: Pipeline Steps List (3 cols)  */}
+        {/* ========================================== */}
+        <div className={`lg:col-span-3 border-r flex flex-col overflow-y-auto ${
+          isDarkMode ? 'bg-slate-900/30 border-slate-800/80' : 'bg-slate-50/50 border-slate-200'
+        }`}>
+          {/* Section Header */}
+          <div className={`p-3 border-b flex items-center justify-between sticky top-0 z-10 ${
+            isDarkMode ? 'bg-slate-900/90 border-slate-800/80' : 'bg-white/95 border-slate-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              <Layers size={15} className="text-purple-400" />
+              <span className="text-xs font-bold uppercase tracking-wider">Pipeline Phases</span>
+              <span className={`text-[11px] font-mono px-1.5 py-0.2 rounded font-semibold ${
+                isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-700'
+              }`}>
                 {steps.length} {steps.length === 1 ? 'Step' : 'Steps'}
               </span>
-              <button
-                onClick={handleAddStep}
-                className="text-xs text-purple-400 hover:text-purple-300 hover:bg-purple-500/15 p-1 rounded-lg transition flex items-center gap-0.5 font-bold cursor-pointer"
-                title="Add New Phase / Step"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span className="text-[11px]">Add Step</span>
-              </button>
             </div>
+
+            <button
+              onClick={handleAddStep}
+              className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border transition-all ${
+                isDarkMode 
+                  ? 'bg-purple-950/40 border-purple-800/60 text-purple-300 hover:bg-purple-900/60' 
+                  : 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100'
+              }`}
+            >
+              <Plus size={12} />
+              <span>Add Step</span>
+            </button>
           </div>
 
-          {/* Sequential Steps List (NO HARD LOCKS - FULLY CLICKABLE & EDITABLE) */}
-          <div className="p-3 space-y-2">
-            {isLoadingPipeline ? (
-              <div className="py-8 text-center text-xs text-zinc-500 flex flex-col items-center gap-2">
-                <RefreshCw className="h-4 w-4 animate-spin text-purple-400" />
-                <span>Loading Project Pipeline...</span>
-              </div>
-            ) : steps.length === 0 ? (
-              <div className="py-8 text-center text-xs text-zinc-500">
-                <p>No steps in pipeline.</p>
-                <button
-                  onClick={handleAddStep}
-                  className="mt-2 text-purple-400 hover:underline font-bold"
-                >
-                  + Add First Step
-                </button>
-              </div>
-            ) : (
-              steps.map((step, idx) => {
-                const stepResult = stepResults[step.id];
-                const isSuccess = stepResult && stepResult.status_code >= 200 && stepResult.status_code < 300;
-                const isSelected = activeStepIndex === idx;
-                const isExecutingThis = executingStepIndex === idx;
+          {/* Steps List */}
+          <div className="p-3 flex flex-col gap-2 flex-1">
+            {steps.map((step, idx) => {
+              const isSelected = idx === activeStepIndex;
+              const stepExec = stepExecutions[step.id] || {};
+              const methodStyle = METHOD_COLORS[step.method] || METHOD_COLORS.GET;
+              const hasExtractions = Array.isArray(step.extractionRules) && step.extractionRules.length > 0;
+              const hasSaved = Boolean(step.savedResponse);
 
-                return (
-                  <React.Fragment key={step.id || idx}>
-                    {/* Linker arrow between steps */}
-                    {idx > 0 && (
-                      <div className="flex items-center justify-center py-0.5">
-                        <div className="flex items-center space-x-1 text-[9.5px] font-bold text-zinc-500 uppercase tracking-widest">
-                          <ChevronRight className="h-2.5 w-2.5 rotate-90" />
-                          <span>Injects Context</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Step Card Item */}
-                    <div
-                      id={`pipeline-step-${idx + 1}`}
-                      onClick={() => setActiveStepIndex(idx)}
-                      className={`p-3 rounded-xl border transition cursor-pointer group relative ${
-                        isSelected
-                          ? isDarkMode
-                            ? 'bg-[#181a30] border-purple-500/60 shadow-md shadow-purple-950/30 ring-1 ring-purple-500/20'
-                            : 'bg-violet-50/90 border-violet-400 shadow-xs ring-1 ring-violet-400/20'
-                          : isDarkMode
-                            ? 'bg-[#141626] border-zinc-800/80 hover:border-zinc-700'
-                            : 'bg-slate-50 border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-2 min-w-0">
-                          <span className={`text-[9.5px] px-1.5 py-0.5 rounded font-black border uppercase tracking-wider shrink-0 ${METHOD_COLORS[step.method]?.bg || 'bg-zinc-800'}`}>
-                            {step.method}
-                          </span>
-                          <span className="text-xs font-extrabold truncate">
-                            {step.name || `Step ${idx + 1}`}
-                          </span>
-                        </div>
-
-                        {/* Status badge or executing spinner */}
-                        <div className="flex items-center space-x-1 shrink-0">
-                          {isExecutingThis ? (
-                            <RefreshCw className="h-3 w-3 animate-spin text-purple-400" />
-                          ) : isSuccess ? (
-                            <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-0.5">
-                              <CheckCircle2 className="h-3 w-3" />
-                              <span>{stepResult.status_code}</span>
-                            </span>
-                          ) : stepResult ? (
-                            <span className="text-[10px] font-bold text-rose-400 flex items-center gap-0.5">
-                              <XCircle className="h-3 w-3" />
-                              <span>{stepResult.status_code}</span>
-                            </span>
-                          ) : (
-                            <span className="text-[9px] font-semibold text-zinc-500 uppercase">Ready</span>
-                          )}
-                        </div>
+              return (
+                <div key={step.id} className="relative">
+                  {/* Step Card */}
+                  <div
+                    id={`pipeline-step-${idx + 1}`}
+                    onClick={() => {
+                      setActiveStepIndex(idx);
+                      setViewingSavedResponse(false);
+                    }}
+                    className={`p-3 rounded-xl border transition-all cursor-pointer group ${
+                      isSelected
+                        ? isDarkMode
+                          ? 'bg-purple-950/20 border-purple-500/50 shadow-sm'
+                          : 'bg-purple-50/80 border-purple-300 shadow-sm'
+                        : isDarkMode
+                          ? 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700 hover:bg-slate-800/40'
+                          : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border uppercase ${methodStyle.bg}`}>
+                          {step.method}
+                        </span>
+                        <span className="text-xs font-bold truncate">
+                          {step.name}
+                        </span>
                       </div>
 
-                      {/* Step URL Preview */}
-                      <p className="text-[10.5px] text-zinc-400 truncate mt-1 font-mono">
-                        {step.url || 'No URL specified'}
-                      </p>
-
-                      {/* Step Footer: Extraction info & Reorder / Delete Actions */}
-                      <div className="mt-2 pt-2 border-t border-zinc-800/40 flex items-center justify-between text-[10px]">
-                        <div className="flex items-center space-x-2">
-                          {step.extractionRules && step.extractionRules.length > 0 ? (
-                            <span className="text-purple-400 font-semibold flex items-center gap-1">
-                              <Zap className="h-2.5 w-2.5" />
-                              <span>Extracts: {step.extractionRules.length}</span>
-                            </span>
+                      {/* Status indicator */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {stepExec.isExecuting ? (
+                          <RefreshCw size={13} className="animate-spin text-purple-400" />
+                        ) : stepExec.responseStatus !== undefined ? (
+                          stepExec.isError ? (
+                            <XCircle size={14} className="text-rose-400" />
                           ) : (
-                            <span className="text-zinc-500">No extractions</span>
-                          )}
-                        </div>
-
-                        {/* Reorder and Delete Controls */}
-                        <div className="flex items-center space-x-1 opacity-80 group-hover:opacity-100 transition">
-                          {idx > 0 && (
-                            <button
-                              onClick={(e) => handleMoveStepUp(idx, e)}
-                              className="p-1 hover:text-purple-400 text-zinc-500 rounded cursor-pointer"
-                              title="Move step up"
-                            >
-                              <ArrowUp className="h-3 w-3" />
-                            </button>
-                          )}
-                          {idx < steps.length - 1 && (
-                            <button
-                              onClick={(e) => handleMoveStepDown(idx, e)}
-                              className="p-1 hover:text-purple-400 text-zinc-500 rounded cursor-pointer"
-                              title="Move step down"
-                            >
-                              <ArrowDown className="h-3 w-3" />
-                            </button>
-                          )}
-                          {steps.length > 1 && (
-                            <button
-                              onClick={(e) => handleDeleteStep(idx, e)}
-                              className="p-1 hover:text-rose-400 text-zinc-500 rounded cursor-pointer"
-                              title="Delete this step"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          )}
-                        </div>
+                            <CheckCircle2 size={14} className="text-emerald-400" />
+                          )
+                        ) : hasSaved ? (
+                          <BookmarkCheck size={14} className="text-purple-400" title="Has Saved Response" />
+                        ) : (
+                          <span className="text-[10px] font-mono text-slate-500">READY</span>
+                        )}
                       </div>
                     </div>
-                  </React.Fragment>
-                );
-              })
-            )}
 
-            {/* Bottom Add Step Quick Button */}
-            {!isLoadingPipeline && steps.length > 0 && (
-              <button
-                onClick={handleAddStep}
-                className={`w-full py-2 border border-dashed rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition cursor-pointer ${
-                  isDarkMode 
-                    ? 'border-zinc-800 text-zinc-400 hover:border-purple-500/50 hover:text-purple-300 hover:bg-purple-950/20' 
-                    : 'border-slate-300 text-slate-600 hover:border-purple-400 hover:text-purple-700 hover:bg-purple-50'
-                }`}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Add Phase / Step</span>
-              </button>
-            )}
+                    {/* Step URL preview */}
+                    <div className="text-[11px] font-mono text-slate-400 truncate mb-1.5">
+                      {step.url}
+                    </div>
+
+                    {/* Meta info & Action tools */}
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-800/30">
+                      <div className="flex items-center gap-2">
+                        {hasExtractions && (
+                          <span className="flex items-center gap-1 text-purple-400 font-semibold">
+                            <Zap size={10} />
+                            <span>Extracts: {step.extractionRules.length}</span>
+                          </span>
+                        )}
+                        {hasSaved && (
+                          <span className="flex items-center gap-1 text-indigo-400 font-semibold">
+                            <BookmarkCheck size={10} />
+                            <span>Saved Response</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Reorder & Delete controls */}
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => handleMoveStep(idx, idx - 1, e)}
+                          disabled={idx === 0}
+                          className="p-1 rounded hover:bg-slate-700/50 disabled:opacity-30"
+                          title="Move step up"
+                        >
+                          <ArrowUp size={11} />
+                        </button>
+                        <button
+                          onClick={(e) => handleMoveStep(idx, idx + 1, e)}
+                          disabled={idx === steps.length - 1}
+                          className="p-1 rounded hover:bg-slate-700/50 disabled:opacity-30"
+                          title="Move step down"
+                        >
+                          <ArrowDown size={11} />
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteStep(idx, e)}
+                          className="p-1 rounded hover:bg-rose-900/40 text-slate-400 hover:text-rose-400"
+                          title="Delete step"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Visual connector line between steps */}
+                  {idx < steps.length - 1 && (
+                    <div className="flex items-center justify-center py-0.5">
+                      <div className="flex items-center gap-1 text-[9px] font-mono text-purple-400/70">
+                        <ChevronRight size={9} className="rotate-90" />
+                        <span>INJECTS CONTEXT</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Add Step Bottom Button */}
+            <button
+              onClick={handleAddStep}
+              className={`w-full py-2 rounded-xl border border-dashed flex items-center justify-center gap-1.5 text-xs font-semibold transition-all ${
+                isDarkMode
+                  ? 'border-slate-800 hover:border-purple-600/60 text-slate-400 hover:text-purple-300 hover:bg-purple-950/20'
+                  : 'border-slate-300 hover:border-purple-400 text-slate-600 hover:text-purple-700 hover:bg-purple-50'
+              }`}
+            >
+              <Plus size={13} />
+              <span>Add Phase / Step</span>
+            </button>
           </div>
 
-          {/* DYNAMIC RUNTIME CONTEXT VARIABLES INSPECTOR */}
-          <div className="p-3.5 border-t border-zinc-800/60 mt-auto space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1">
-                <Database className="h-3 w-3 text-purple-400" />
+          {/* Active Runtime Extracted Variables Drawer */}
+          <div className={`p-3 border-t mt-auto ${
+            isDarkMode ? 'bg-slate-900/70 border-slate-800' : 'bg-slate-100/80 border-slate-200'
+          }`}>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <Database size={12} className="text-purple-400" />
                 <span>Runtime Context</span>
               </span>
-              {Object.keys(runtimeVars).length > 0 && (
-                <button
-                  onClick={() => setRuntimeVars({})}
-                  className="text-[10px] text-zinc-500 hover:text-zinc-300 transition cursor-pointer"
-                  title="Clear runtime variables"
-                >
-                  Clear
-                </button>
-              )}
+              <span className="text-[10px] font-mono text-slate-400">
+                {Object.keys(runtimeVars).length} extracted
+              </span>
             </div>
 
             {Object.keys(runtimeVars).length === 0 ? (
-              <p className="text-[11px] text-zinc-500 italic p-2 rounded bg-zinc-900/30 border border-dashed border-zinc-800">
+              <div className="text-[11px] text-slate-500 italic">
                 No variables extracted yet. Execute steps to populate dynamic token and IDs.
-              </p>
+              </div>
             ) : (
-              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+              <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
                 {Object.entries(runtimeVars).map(([k, v]) => (
-                  <div key={k} className="p-2 rounded-lg bg-purple-950/25 border border-purple-800/30 text-xs">
-                    <span className="font-mono text-[10px] font-bold text-purple-400 block truncate">{`{{${k}}}`}</span>
-                    <span className="font-mono text-[10px] text-zinc-300 block truncate mt-0.5">{String(v)}</span>
+                  <div key={k} className={`p-1.5 rounded text-[10px] font-mono flex items-center justify-between ${
+                    isDarkMode ? 'bg-slate-950/80 border border-slate-800' : 'bg-white border border-slate-200'
+                  }`}>
+                    <span className="text-purple-400 font-bold truncate">{'{{' + k + '}}'}</span>
+                    <span className="text-slate-300 truncate max-w-[120px]" title={String(v)}>
+                      {String(v)}
+                    </span>
                   </div>
                 ))}
               </div>
             )}
           </div>
+        </div>
 
-          {/* LIVE EXECUTION CONSOLE DRAWER */}
-          {pipelineLogs.length > 0 && (
-            <div className={`p-3 border-t text-xs font-mono max-h-48 overflow-y-auto ${
-              isDarkMode ? 'bg-[#090a12]' : 'bg-slate-100'
+        {/* ==================================================== */}
+        {/* CENTER COLUMN: Request Editor & Config (5 cols)     */}
+        {/* ==================================================== */}
+        {activeStep ? (
+          <div className="lg:col-span-5 flex flex-col border-r border-slate-800/80 overflow-y-auto">
+            {/* Step Header Bar */}
+            <div className={`p-3 border-b flex items-center justify-between gap-2 ${
+              isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-50 border-slate-200'
             }`}>
-              <div className="flex items-center justify-between text-[10px] text-zinc-400 uppercase font-bold mb-1.5">
-                <span>Execution Log</span>
-                <button onClick={() => setPipelineLogs([])} className="hover:text-zinc-200">Clear</button>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className="text-xs font-bold text-purple-400 shrink-0">
+                  PHASE #{activeStepIndex + 1}:
+                </span>
+                <input
+                  type="text"
+                  value={activeStep.name}
+                  onChange={(e) => handleUpdateActiveStep({ name: e.target.value })}
+                  className={`text-xs font-bold px-2 py-1 rounded border flex-1 ${
+                    isDarkMode 
+                      ? 'bg-slate-900 border-slate-700 text-white focus:border-purple-500' 
+                      : 'bg-white border-slate-300 text-slate-900 focus:border-purple-500'
+                  } focus:outline-none`}
+                />
               </div>
-              <div className="space-y-1">
-                {pipelineLogs.map((log, idx) => (
-                  <div key={idx} className={`text-[10px] leading-relaxed ${
-                    log.type === 'error' ? 'text-rose-400 font-bold' : log.type === 'success' ? 'text-emerald-400' : 'text-zinc-400'
-                  }`}>
-                    <span className="text-zinc-600 mr-1">[{log.time}]</span>
-                    {log.msg}
-                  </div>
+
+              <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                ID: {activeStep.id}
+              </span>
+            </div>
+
+            {/* URL Input Bar */}
+            <div className="p-3 border-b border-slate-800/80 flex items-center gap-2">
+              <select
+                value={activeStep.method}
+                onChange={(e) => handleUpdateActiveStep({ method: e.target.value })}
+                className={`text-xs font-bold px-2.5 py-2 rounded-lg border focus:outline-none ${METHOD_COLORS[activeStep.method]?.bg}`}
+              >
+                {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => (
+                  <option key={m} value={m} className={isDarkMode ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'}>
+                    {m}
+                  </option>
                 ))}
+              </select>
+
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={activeStep.url}
+                  onChange={(e) => handleUpdateActiveStep({ url: e.target.value })}
+                  placeholder="{{baseUrl}}/api/endpoint"
+                  className={`w-full text-xs font-mono px-3 py-2 rounded-lg border focus:outline-none ${
+                    isDarkMode 
+                      ? 'bg-slate-900/90 border-slate-700 text-slate-100 focus:border-purple-500' 
+                      : 'bg-white border-slate-300 text-slate-900 focus:border-purple-500'
+                  }`}
+                />
               </div>
-            </div>
-          )}
 
-        </aside>
-
-        {/* WORKSPACE AREA: REQUEST BUILDER (LEFT) & RESPONSE VIEWER (RIGHT) */}
-        <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
-          {activeStep ? (
-            <>
-              {/* LEFT HALF: REQUEST BUILDER */}
-              <section className="flex-1 flex flex-col border-b md:border-b-0 md:border-r overflow-hidden">
-                
-                {/* Step Title & Method & URL Address Bar */}
-                <div className={`p-3 border-b space-y-2.5 ${
-                  isDarkMode ? 'bg-[#121424] border-zinc-800/80' : 'bg-slate-100/70 border-slate-200'
-                }`}>
-                  
-                  {/* Step Title Header (Editable Name) */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2 flex-1 mr-2">
-                      <span className="text-xs font-extrabold text-purple-400 uppercase tracking-wider">
-                        Phase #{activeStepIndex + 1}:
-                      </span>
-                      <input
-                        type="text"
-                        value={activeStep.name || ''}
-                        onChange={e => updateActiveStep({ name: e.target.value })}
-                        placeholder="Step Name / Purpose..."
-                        className={`text-xs font-bold px-2 py-1 rounded-lg border flex-1 transition ${
-                          isDarkMode 
-                            ? 'bg-[#0f101d] border-zinc-750 text-zinc-100 focus:border-purple-500' 
-                            : 'bg-white border-slate-300 text-slate-900 focus:border-purple-500'
-                        }`}
-                      />
-                    </div>
-
-                    <span className="text-[10px] font-mono text-zinc-500">
-                      ID: {activeStep.id.substring(0, 10)}
-                    </span>
-                  </div>
-
-                  {/* Method Selector, URL Input & Send Button */}
-                  <div className="flex items-center space-x-2">
-                    {/* Method Selector */}
-                    <select
-                      value={activeStep.method}
-                      onChange={e => updateActiveStep({ method: e.target.value })}
-                      className={`font-black text-xs px-3 py-2 rounded-xl border focus:outline-hidden cursor-pointer ${METHOD_COLORS[activeStep.method]?.bg || 'bg-zinc-800'}`}
-                    >
-                      {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => (
-                        <option key={m} value={m} className={isDarkMode ? 'bg-zinc-900 text-zinc-100' : 'bg-white text-slate-900'}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-
-                    {/* URL Input */}
-                    <div className="flex-1 relative">
-                      <input
-                        type="text"
-                        value={activeStep.url || ''}
-                        onChange={e => updateActiveStep({ url: e.target.value })}
-                        placeholder="Enter request URL with {{variable}}..."
-                        className={`w-full text-xs font-mono px-3 py-2 rounded-xl border focus:outline-hidden focus:ring-2 transition ${
-                          isDarkMode 
-                            ? 'bg-[#0f101d] border-zinc-750 text-zinc-100 focus:ring-purple-500/30' 
-                            : 'bg-white border-slate-300 text-slate-900 focus:ring-violet-500/20 shadow-2xs'
-                        }`}
-                      />
-                    </div>
-
-                    {/* Send Button */}
-                    <button
-                      onClick={() => executeStep(activeStepIndex)}
-                      disabled={executingStepIndex === activeStepIndex}
-                      className={`text-xs font-black px-4 py-2 rounded-xl border flex items-center space-x-1.5 transition shadow-sm cursor-pointer ${
-                        executingStepIndex === activeStepIndex
-                          ? 'opacity-60 cursor-not-allowed'
-                          : METHOD_COLORS[activeStep.method]?.btn || 'bg-purple-600'
-                      }`}
-                    >
-                      {executingStepIndex === activeStepIndex ? (
-                        <>
-                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                          <span>Sending...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-3.5 w-3.5 fill-current" />
-                          <span>Send</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Sub-Navigation Tabs */}
-                <div className={`flex items-center px-3 border-b text-xs space-x-4 ${
-                  isDarkMode ? 'bg-[#101220] border-zinc-800/80' : 'bg-slate-50 border-slate-200'
-                }`}>
-                  {[
-                    { id: 'body', label: 'Body' },
-                    { id: 'headers', label: `Headers (${(activeStep.headers || []).filter(h => h.enabled).length})` },
-                    { id: 'params', label: `Params (${(activeStep.params || []).filter(p => p.enabled).length})` },
-                    { id: 'extraction', label: `Variable Extraction (${(activeStep.extractionRules || []).length})` }
-                  ].map(tab => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setReqTab(tab.id)}
-                      className={`py-2.5 font-bold border-b-2 transition cursor-pointer ${
-                        reqTab === tab.id
-                          ? 'border-purple-500 text-purple-400'
-                          : 'border-transparent text-zinc-400 hover:text-zinc-200'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Tab Contents */}
-                <div className="flex-1 p-3.5 overflow-y-auto">
-                  
-                  {/* BODY TAB */}
-                  {reqTab === 'body' && (
-                    <div className="h-full flex flex-col space-y-2">
-                      <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                        <span>JSON (application/json) with interpolation support:</span>
-                        <button
-                          onClick={() => {
-                            try {
-                              const parsed = JSON.parse(activeStep.body);
-                              const formatted = JSON.stringify(parsed, null, 2);
-                              updateActiveStep({ body: formatted });
-                            } catch {
-                              // Ignore parse error
-                            }
-                          }}
-                          className="text-purple-400 hover:underline cursor-pointer font-semibold"
-                        >
-                          Prettify JSON
-                        </button>
-                      </div>
-
-                      <textarea
-                        value={activeStep.body || ''}
-                        onChange={e => updateActiveStep({ body: e.target.value })}
-                        rows={12}
-                        placeholder='{
-  "key": "value"
-}'
-                        className={`flex-1 w-full text-xs font-mono p-3 rounded-xl border focus:outline-hidden resize-none transition ${
-                          isDarkMode 
-                            ? 'bg-[#0b0c16] border-zinc-800 text-zinc-200 focus:border-purple-500/50' 
-                            : 'bg-white border-slate-300 text-slate-900 focus:border-violet-500 shadow-inner'
-                        }`}
-                      />
-                    </div>
-                  )}
-
-                  {/* HEADERS TAB */}
-                  {reqTab === 'headers' && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Request Headers</span>
-                        <button
-                          onClick={() => {
-                            const newHeader = { id: Date.now().toString(), enabled: true, key: '', value: '' };
-                            updateActiveStep(s => ({ ...s, headers: [...(s.headers || []), newHeader] }));
-                          }}
-                          className="text-xs text-purple-400 hover:underline flex items-center gap-1 cursor-pointer font-semibold"
-                        >
-                          <Plus className="h-3 w-3" />
-                          <span>Add Header</span>
-                        </button>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        {(activeStep.headers || []).map((h, idx) => (
-                          <div key={h.id || idx} className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={h.enabled}
-                              onChange={e => {
-                                const hdrs = [...(activeStep.headers || [])];
-                                hdrs[idx].enabled = e.target.checked;
-                                updateActiveStep({ headers: hdrs });
-                              }}
-                              className="rounded border-zinc-700 text-purple-600 focus:ring-0 cursor-pointer"
-                            />
-                            <input
-                              type="text"
-                              value={h.key}
-                              placeholder="Header key (e.g. Authorization)"
-                              onChange={e => {
-                                const hdrs = [...(activeStep.headers || [])];
-                                hdrs[idx].key = e.target.value;
-                                updateActiveStep({ headers: hdrs });
-                              }}
-                              className={`flex-1 text-xs px-2.5 py-1.5 rounded-lg border font-mono ${
-                                isDarkMode ? 'bg-[#0f101d] border-zinc-800 text-zinc-100' : 'bg-white border-slate-300 text-slate-900'
-                              }`}
-                            />
-                            <input
-                              type="text"
-                              value={h.value}
-                              placeholder="Header value (e.g. Bearer {{step1_token}})"
-                              onChange={e => {
-                                const hdrs = [...(activeStep.headers || [])];
-                                hdrs[idx].value = e.target.value;
-                                updateActiveStep({ headers: hdrs });
-                              }}
-                              className={`flex-1 text-xs px-2.5 py-1.5 rounded-lg border font-mono ${
-                                isDarkMode ? 'bg-[#0f101d] border-zinc-800 text-zinc-100' : 'bg-white border-slate-300 text-slate-900'
-                              }`}
-                            />
-                            <button
-                              onClick={() => {
-                                const hdrs = (activeStep.headers || []).filter((_, i) => i !== idx);
-                                updateActiveStep({ headers: hdrs });
-                              }}
-                              className="p-1.5 text-zinc-500 hover:text-rose-400 transition cursor-pointer"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* PARAMS TAB */}
-                  {reqTab === 'params' && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Query Parameters</span>
-                        <button
-                          onClick={() => {
-                            const newParam = { id: Date.now().toString(), enabled: true, key: '', value: '' };
-                            updateActiveStep(s => ({ ...s, params: [...(s.params || []), newParam] }));
-                          }}
-                          className="text-xs text-purple-400 hover:underline flex items-center gap-1 cursor-pointer font-semibold"
-                        >
-                          <Plus className="h-3 w-3" />
-                          <span>Add Query Param</span>
-                        </button>
-                      </div>
-
-                      {(activeStep.params || []).length === 0 ? (
-                        <p className="text-xs text-zinc-500 italic">No query parameters defined.</p>
-                      ) : (
-                        <div className="space-y-1.5">
-                          {activeStep.params.map((p, idx) => (
-                            <div key={p.id || idx} className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                checked={p.enabled}
-                                onChange={e => {
-                                  const prms = [...(activeStep.params || [])];
-                                  prms[idx].enabled = e.target.checked;
-                                  updateActiveStep({ params: prms });
-                                }}
-                                className="rounded border-zinc-700 text-purple-600 focus:ring-0 cursor-pointer"
-                              />
-                              <input
-                                type="text"
-                                value={p.key}
-                                placeholder="Param name"
-                                onChange={e => {
-                                  const prms = [...(activeStep.params || [])];
-                                  prms[idx].key = e.target.value;
-                                  updateActiveStep({ params: prms });
-                                }}
-                                className={`flex-1 text-xs px-2.5 py-1.5 rounded-lg border font-mono ${
-                                  isDarkMode ? 'bg-[#0f101d] border-zinc-800 text-zinc-100' : 'bg-white border-slate-300 text-slate-900'
-                                }`}
-                              />
-                              <input
-                                type="text"
-                                value={p.value}
-                                placeholder="Param value"
-                                onChange={e => {
-                                  const prms = [...(activeStep.params || [])];
-                                  prms[idx].value = e.target.value;
-                                  updateActiveStep({ params: prms });
-                                }}
-                                className={`flex-1 text-xs px-2.5 py-1.5 rounded-lg border font-mono ${
-                                  isDarkMode ? 'bg-[#0f101d] border-zinc-800 text-zinc-100' : 'bg-white border-slate-300 text-slate-900'
-                                }`}
-                              />
-                              <button
-                                onClick={() => {
-                                  const prms = (activeStep.params || []).filter((_, i) => i !== idx);
-                                  updateActiveStep({ params: prms });
-                                }}
-                                className="p-1.5 text-zinc-500 hover:text-rose-400 transition cursor-pointer"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* VARIABLE EXTRACTION TAB */}
-                  {reqTab === 'extraction' && (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400">Response Variable Extraction</h4>
-                          <p className="text-[11px] text-zinc-400">
-                            Define keys to automatically extract from this phase's JSON response and inject into downstream steps.
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => {
-                            const newRule = { id: Date.now().toString(), targetVar: '', sourcePath: '', description: '' };
-                            updateActiveStep(s => ({ ...s, extractionRules: [...(s.extractionRules || []), newRule] }));
-                          }}
-                          className="text-xs text-purple-400 hover:underline flex items-center gap-1 cursor-pointer font-semibold"
-                        >
-                          <Plus className="h-3 w-3" />
-                          <span>Add Extraction Rule</span>
-                        </button>
-                      </div>
-
-                      {(activeStep.extractionRules || []).length === 0 ? (
-                        <p className="text-xs text-zinc-500 italic p-3 rounded-xl border border-dashed border-zinc-800 text-center">
-                          No extraction rules for this step. Click "+ Add Extraction Rule" to extract dynamic tokens or entity IDs.
-                        </p>
-                      ) : (
-                        <div className="space-y-2">
-                          {activeStep.extractionRules.map((r, idx) => (
-                            <div key={r.id || idx} className={`p-3 rounded-xl border space-y-2 ${
-                              isDarkMode ? 'bg-[#0f101d] border-zinc-800' : 'bg-white border-slate-200 shadow-2xs'
-                            }`}>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <div>
-                                  <label className="block text-[9.5px] font-bold uppercase text-zinc-400 mb-0.5">Target Variable Name</label>
-                                  <input
-                                    type="text"
-                                    value={r.targetVar || ''}
-                                    placeholder="e.g. step1_token or userId"
-                                    onChange={e => {
-                                      const rules = [...activeStep.extractionRules];
-                                      rules[idx].targetVar = e.target.value;
-                                      updateActiveStep({ extractionRules: rules });
-                                    }}
-                                    className={`w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border ${
-                                      isDarkMode ? 'bg-[#151728] border-zinc-700 text-purple-300' : 'bg-slate-50 border-slate-300 text-purple-700'
-                                    }`}
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="block text-[9.5px] font-bold uppercase text-zinc-400 mb-0.5">JSON Path in Response</label>
-                                  <input
-                                    type="text"
-                                    value={r.sourcePath || ''}
-                                    placeholder="e.g. token or data.user.id"
-                                    onChange={e => {
-                                      const rules = [...activeStep.extractionRules];
-                                      rules[idx].sourcePath = e.target.value;
-                                      updateActiveStep({ extractionRules: rules });
-                                    }}
-                                    className={`w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border ${
-                                      isDarkMode ? 'bg-[#151728] border-zinc-700 text-zinc-100' : 'bg-slate-50 border-slate-300 text-slate-900'
-                                    }`}
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-between text-[11px] pt-1">
-                                <span className="text-zinc-500">
-                                  Resolved Value:{' '}
-                                  <strong className="font-mono text-emerald-400">
-                                    {runtimeVars[r.targetVar] !== undefined ? String(runtimeVars[r.targetVar]) : '(not extracted yet)'}
-                                  </strong>
-                                </span>
-                                <button
-                                  onClick={() => {
-                                    const rules = activeStep.extractionRules.filter((_, i) => i !== idx);
-                                    updateActiveStep({ extractionRules: rules });
-                                  }}
-                                  className="text-zinc-500 hover:text-rose-400 text-xs transition cursor-pointer"
-                                >
-                                  Remove Rule
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                </div>
-              </section>
-
-              {/* RIGHT HALF: RESPONSE VISUALIZER */}
-              <section className="flex-1 flex flex-col overflow-hidden">
-                
-                {/* Response Status Bar */}
-                <div className={`p-3 border-b flex items-center justify-between ${
-                  isDarkMode ? 'bg-[#121424] border-zinc-800/80' : 'bg-slate-100/70 border-slate-200'
-                }`}>
-                  <div className="flex items-center space-x-3">
-                    <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Response</span>
-                    
-                    {currentResult ? (
-                      <div className="flex items-center space-x-2">
-                        <span className={`text-xs font-black px-2.5 py-0.5 rounded-full border ${
-                          currentResult.status_code >= 200 && currentResult.status_code < 300
-                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                            : currentResult.status_code >= 400 && currentResult.status_code < 500
-                              ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-                              : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
-                        }`}>
-                          {currentResult.status_code} {currentResult.status_text}
-                        </span>
-
-                        <span className="text-zinc-400 text-xs flex items-center gap-1 font-mono">
-                          <Clock className="h-3 w-3" />
-                          <span>{currentResult.time_ms} ms</span>
-                        </span>
-
-                        <span className="text-zinc-400 text-xs flex items-center gap-1 font-mono">
-                          <HardDrive className="h-3 w-3" />
-                          <span>{currentResult.size_bytes} B</span>
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-zinc-500 italic">No response generated yet</span>
-                    )}
-                  </div>
-
-                  {currentResult && (
-                    <button
-                      onClick={() => {
-                        const content = typeof currentResult.data === 'object'
-                          ? JSON.stringify(currentResult.data, null, 2)
-                          : String(currentResult.data);
-                        navigator.clipboard.writeText(content);
-                        setCopiedResponse(true);
-                        setTimeout(() => setCopiedResponse(false), 1800);
-                      }}
-                      className={`text-xs font-semibold px-2.5 py-1 rounded-lg border transition flex items-center gap-1 cursor-pointer ${
-                        isDarkMode ? 'border-zinc-750 hover:bg-zinc-800 text-zinc-300' : 'border-slate-300 hover:bg-slate-100 text-slate-700'
-                      }`}
-                    >
-                      {copiedResponse ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
-                      <span>{copiedResponse ? 'Copied' : 'Copy'}</span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Response Sub-Tabs */}
-                <div className={`flex items-center px-3 border-b text-xs space-x-4 ${
-                  isDarkMode ? 'bg-[#101220] border-zinc-800/80' : 'bg-slate-50 border-slate-200'
-                }`}>
-                  {[
-                    { id: 'body', label: 'Response Body' },
-                    { id: 'headers', label: `Headers (${currentResult ? Object.keys(currentResult.headers || {}).length : 0})` },
-                    { id: 'extracted', label: 'Runtime Context' }
-                  ].map(tab => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setResTab(tab.id)}
-                      className={`py-2 font-bold border-b-2 transition cursor-pointer ${
-                        resTab === tab.id
-                          ? 'border-purple-500 text-purple-400'
-                          : 'border-transparent text-zinc-400 hover:text-zinc-200'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Response Content View */}
-                <div className="flex-1 p-3.5 overflow-auto">
-                  {!currentResult ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-2">
-                      <Terminal className="h-8 w-8 text-zinc-600" />
-                      <p className="text-xs text-zinc-500">
-                        Click <span className="font-bold text-zinc-300">"Send"</span> or trigger <span className="font-bold text-purple-400">"Run Chained Pipeline"</span> to see response metrics.
-                      </p>
-                    </div>
-                  ) : resTab === 'body' ? (
-                    <pre className={`p-4 rounded-xl text-xs font-mono overflow-auto leading-relaxed border ${
-                      isDarkMode 
-                        ? 'bg-[#080911] border-zinc-850 text-emerald-300 shadow-inner' 
-                        : 'bg-slate-900 text-emerald-300 border-slate-800 shadow-inner'
-                    }`}>
-                      {typeof currentResult.data === 'object'
-                        ? JSON.stringify(currentResult.data, null, 2)
-                        : String(currentResult.data)}
-                    </pre>
-                  ) : resTab === 'headers' ? (
-                    <div className="space-y-1.5 font-mono text-xs">
-                      {Object.entries(currentResult.headers || {}).map(([k, v]) => (
-                        <div key={k} className="flex border-b border-zinc-800/40 py-1">
-                          <span className="w-1/3 font-bold text-purple-400 truncate">{k}:</span>
-                          <span className="w-2/3 text-zinc-300 truncate">{v}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    /* Extracted Variables Tab */
-                    <div className="space-y-2">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400">Dynamic Injected Context</h4>
-                      {Object.entries(runtimeVars).length === 0 ? (
-                        <p className="text-xs text-zinc-500">No variables extracted from executions yet.</p>
-                      ) : (
-                        Object.entries(runtimeVars).map(([k, v]) => (
-                          <div key={k} className="p-3 rounded-xl border space-y-1 bg-purple-950/20 border-purple-800/30">
-                            <span className="text-[10.5px] font-bold text-purple-400">{`{{${k}}}`}</span>
-                            <p className="text-xs font-mono text-zinc-200 break-all">{String(v)}</p>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-
-              </section>
-            </>
-          ) : (
-            <div className="flex-1 flex items-center justify-center p-8 text-center text-zinc-500">
-              <p>No step selected. Choose a step from the sidebar or click "+ Add Step".</p>
-            </div>
-          )}
-
-        </main>
-      </div>
-
-      {/* PROJECT-SCOPED ENVIRONMENT MANAGEMENT MODAL */}
-      {showEnvModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
-          <div className={`border rounded-2xl max-w-2xl w-full p-5 shadow-2xl space-y-4 transition ${
-            isDarkMode ? 'bg-[#121422] border-zinc-800 text-zinc-100' : 'bg-white border-slate-200 text-slate-900'
-          }`}>
-            
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center space-x-2">
-                <Globe className="h-5 w-5 text-purple-400" />
-                <div>
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-purple-400">
-                    Environment & Variable Studio
-                  </h3>
-                  <p className="text-[11px] text-zinc-400">
-                    Project: <span className="font-bold text-zinc-200">{currentProject.name}</span>
-                  </p>
-                </div>
-              </div>
-              <button onClick={() => setShowEnvModal(false)} className="text-zinc-500 hover:text-zinc-300 p-1 cursor-pointer transition">
-                <X className="h-4 w-4" />
+              {/* Single Step Send Button */}
+              <button
+                onClick={handleRunActiveStep}
+                disabled={activeStepExec.isExecuting || isPipelineRunning}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold text-white transition-all shadow-sm ${
+                  activeStepExec.isExecuting
+                    ? 'bg-purple-800 opacity-80'
+                    : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/20 active:scale-95'
+                }`}
+              >
+                {activeStepExec.isExecuting ? (
+                  <RefreshCw size={13} className="animate-spin" />
+                ) : (
+                  <Play size={13} className="fill-white" />
+                )}
+                <span>Send</span>
               </button>
             </div>
 
-            {/* Environment Tabs & "+ New Environment" Inline Creation */}
-            <div className="space-y-3 border-b pb-3">
-              <div className="flex flex-wrap items-center gap-2">
-                {environments.map(env => (
-                  <button
-                    key={env.id}
-                    onClick={() => setActiveEnvId(env.id)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                      activeEnvId === env.id
-                        ? 'bg-purple-600 text-white shadow-sm'
-                        : isDarkMode
-                          ? 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200'
-                          : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <span>{env.name}</span>
-                    {env.is_default && (
-                      <span className="text-[9px] bg-white/20 px-1 rounded uppercase">default</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              {/* Add New Custom Environment Row */}
-              <div className="flex items-center space-x-2 pt-1">
-                <input
-                  type="text"
-                  value={newEnvName}
-                  onChange={e => setNewEnvName(e.target.value)}
-                  placeholder="New Environment name (e.g. QA-02, Pre-Prod)..."
-                  className={`text-xs px-3 py-1.5 rounded-lg border flex-1 ${
-                    isDarkMode ? 'bg-[#0f101d] border-zinc-750 text-zinc-100' : 'bg-slate-50 border-slate-300 text-slate-900'
-                  }`}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') handleCreateEnvironment();
-                  }}
-                />
+            {/* Config Tabs: Body | Headers | Params | Variable Extraction */}
+            <div className={`flex items-center gap-1 px-3 border-b text-xs font-semibold ${
+              isDarkMode ? 'border-slate-800 bg-slate-900/30' : 'border-slate-200 bg-slate-100/50'
+            }`}>
+              {[
+                { id: 'body', label: 'Body' },
+                { id: 'headers', label: `Headers (${activeStep.headers?.length || 0})` },
+                { id: 'params', label: `Params (${activeStep.params?.length || 0})` },
+                { id: 'extraction', label: `Variable Extraction (${activeStep.extractionRules?.length || 0})` }
+              ].map(tab => (
                 <button
-                  onClick={handleCreateEnvironment}
-                  disabled={!newEnvName.trim() || isCreatingEnv}
-                  className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-3 py-2.5 border-b-2 transition-all ${
+                    activeTab === tab.id
+                      ? 'border-purple-500 text-purple-400 font-bold'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>+ New Environment</span>
+                  {tab.label}
                 </button>
-              </div>
+              ))}
             </div>
 
-            {/* Key-Value Table for Active Environment */}
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-wider text-purple-400">
-                    Variables for "{activeEnv.name}"
-                  </span>
-                  <span className="text-[11px] text-zinc-400 ml-2">
-                    ({(activeEnv.variables || []).length} Keys)
-                  </span>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => {
-                      const updated = environments.map(e => {
-                        if (e.id === activeEnvId) {
-                          return { ...e, variables: [...(e.variables || []), { key: '', value: '' }] };
-                        }
-                        return e;
-                      });
-                      setEnvironments(updated);
-                    }}
-                    className="text-xs text-purple-400 hover:underline flex items-center gap-1 font-semibold cursor-pointer"
-                  >
-                    <Plus className="h-3 w-3" />
-                    <span>Add Variable</span>
-                  </button>
-
-                  {!activeEnv.is_default && environments.length > 1 && (
+            {/* Tab Contents */}
+            <div className="p-3 flex-1 overflow-y-auto">
+              {/* TAB 1: BODY */}
+              {activeTab === 'body' && (
+                <div className="flex flex-col h-full gap-2">
+                  <div className="flex items-center justify-between text-[11px] text-slate-400">
+                    <span>JSON (application/json) with interpolation support:</span>
                     <button
-                      onClick={() => handleDeleteEnvironment(activeEnv.id)}
-                      className="text-xs text-rose-400 hover:underline flex items-center gap-1 font-semibold cursor-pointer ml-2"
+                      onClick={() => {
+                        try {
+                          const parsed = JSON.parse(activeStep.body);
+                          handleUpdateActiveStep({ body: JSON.stringify(parsed, null, 2) });
+                        } catch {}
+                      }}
+                      className="text-purple-400 hover:underline text-[11px] font-semibold"
                     >
-                      <Trash2 className="h-3 w-3" />
-                      <span>Delete Environment</span>
+                      Prettify JSON
                     </button>
-                  )}
+                  </div>
+                  <textarea
+                    value={activeStep.body || ''}
+                    onChange={(e) => handleUpdateActiveStep({ body: e.target.value })}
+                    placeholder={'{\n  "key": "value",\n  "token": "{{step1_token}}"\n}'}
+                    rows={14}
+                    className={`w-full flex-1 p-3 rounded-xl font-mono text-xs border resize-none focus:outline-none ${
+                      isDarkMode 
+                        ? 'bg-slate-900/90 border-slate-800 text-slate-200 focus:border-purple-500' 
+                        : 'bg-white border-slate-300 text-slate-900 focus:border-purple-500'
+                    }`}
+                  />
                 </div>
-              </div>
+              )}
 
-              {/* Key-Value List */}
-              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                {(activeEnv.variables || []).length === 0 ? (
-                  <p className="text-xs text-zinc-500 italic p-3 text-center border border-dashed border-zinc-800 rounded-xl">
-                    No variables in this environment. Click "+ Add Variable" to define keys.
-                  </p>
-                ) : (
-                  (activeEnv.variables || []).map((v, idx) => (
-                    <div key={idx} className="flex items-center space-x-2">
+              {/* TAB 2: HEADERS */}
+              {activeTab === 'headers' && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[11px] font-semibold text-slate-400">HTTP Headers</span>
+                    <button
+                      onClick={() => {
+                        const newHeaders = [...(activeStep.headers || []), { id: Date.now().toString(), enabled: true, key: '', value: '' }];
+                        handleUpdateActiveStep({ headers: newHeaders });
+                      }}
+                      className="flex items-center gap-1 text-xs text-purple-400 hover:text-purple-300 font-semibold"
+                    >
+                      <Plus size={12} />
+                      <span>Add Header</span>
+                    </button>
+                  </div>
+
+                  {(activeStep.headers || []).map((h, hIdx) => (
+                    <div key={h.id || hIdx} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={h.enabled}
+                        onChange={(e) => {
+                          const updated = [...activeStep.headers];
+                          updated[hIdx].enabled = e.target.checked;
+                          handleUpdateActiveStep({ headers: updated });
+                        }}
+                        className="rounded border-slate-700 text-purple-600 focus:ring-purple-500"
+                      />
                       <input
                         type="text"
-                        value={v.key}
-                        placeholder="Variable key (e.g. baseUrl)"
-                        onChange={e => {
-                          const updated = environments.map(env => {
-                            if (env.id === activeEnvId) {
-                              const vars = [...(env.variables || [])];
-                              vars[idx].key = e.target.value;
-                              return { ...env, variables: vars };
-                            }
-                            return env;
-                          });
-                          setEnvironments(updated);
+                        placeholder="Header Key (e.g. Authorization)"
+                        value={h.key}
+                        onChange={(e) => {
+                          const updated = [...activeStep.headers];
+                          updated[hIdx].key = e.target.value;
+                          handleUpdateActiveStep({ headers: updated });
                         }}
-                        className={`w-1/3 text-xs font-mono px-2.5 py-1.5 rounded-lg border ${
-                          isDarkMode ? 'bg-[#0f101d] border-zinc-750 text-purple-300' : 'bg-slate-50 border-slate-300 text-purple-700'
+                        className={`flex-1 text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                          isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
                         }`}
                       />
                       <input
                         type="text"
-                        value={v.value}
-                        placeholder="Variable value (e.g. https://api.bankalhabib.com)"
-                        onChange={e => {
-                          const updated = environments.map(env => {
-                            if (env.id === activeEnvId) {
-                              const vars = [...(env.variables || [])];
-                              vars[idx].value = e.target.value;
-                              return { ...env, variables: vars };
-                            }
-                            return env;
-                          });
-                          setEnvironments(updated);
+                        placeholder="Header Value (e.g. Bearer {{step1_token}})"
+                        value={h.value}
+                        onChange={(e) => {
+                          const updated = [...activeStep.headers];
+                          updated[hIdx].value = e.target.value;
+                          handleUpdateActiveStep({ headers: updated });
                         }}
-                        className={`flex-1 text-xs font-mono px-2.5 py-1.5 rounded-lg border ${
-                          isDarkMode ? 'bg-[#0f101d] border-zinc-750 text-zinc-100' : 'bg-slate-50 border-slate-300 text-slate-900'
+                        className={`flex-1 text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                          isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
                         }`}
                       />
                       <button
                         onClick={() => {
-                          const updated = environments.map(env => {
-                            if (env.id === activeEnvId) {
-                              return { ...env, variables: (env.variables || []).filter((_, i) => i !== idx) };
-                            }
-                            return env;
-                          });
-                          setEnvironments(updated);
+                          const updated = activeStep.headers.filter((_, idx) => idx !== hIdx);
+                          handleUpdateActiveStep({ headers: updated });
                         }}
-                        className="p-1.5 text-zinc-500 hover:text-rose-400 transition cursor-pointer"
-                        title="Delete variable"
+                        className="p-1 rounded text-slate-500 hover:text-rose-400"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* TAB 3: PARAMS */}
+              {activeTab === 'params' && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[11px] font-semibold text-slate-400">Query Parameters</span>
+                    <button
+                      onClick={() => {
+                        const newParams = [...(activeStep.params || []), { id: Date.now().toString(), enabled: true, key: '', value: '' }];
+                        handleUpdateActiveStep({ params: newParams });
+                      }}
+                      className="flex items-center gap-1 text-xs text-purple-400 hover:text-purple-300 font-semibold"
+                    >
+                      <Plus size={12} />
+                      <span>Add Parameter</span>
+                    </button>
+                  </div>
+
+                  {(!activeStep.params || activeStep.params.length === 0) ? (
+                    <div className="text-xs text-slate-500 italic py-4 text-center">No query parameters defined.</div>
+                  ) : (
+                    activeStep.params.map((p, pIdx) => (
+                      <div key={p.id || pIdx} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={p.enabled}
+                          onChange={(e) => {
+                            const updated = [...activeStep.params];
+                            updated[pIdx].enabled = e.target.checked;
+                            handleUpdateActiveStep({ params: updated });
+                          }}
+                          className="rounded border-slate-700 text-purple-600 focus:ring-purple-500"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Param Key"
+                          value={p.key}
+                          onChange={(e) => {
+                            const updated = [...activeStep.params];
+                            updated[pIdx].key = e.target.value;
+                            handleUpdateActiveStep({ params: updated });
+                          }}
+                          className={`flex-1 text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                            isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
+                          }`}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Param Value"
+                          value={p.value}
+                          onChange={(e) => {
+                            const updated = [...activeStep.params];
+                            updated[pIdx].value = e.target.value;
+                            handleUpdateActiveStep({ params: updated });
+                          }}
+                          className={`flex-1 text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                            isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
+                          }`}
+                        />
+                        <button
+                          onClick={() => {
+                            const updated = activeStep.params.filter((_, idx) => idx !== pIdx);
+                            handleUpdateActiveStep({ params: updated });
+                          }}
+                          className="p-1 rounded text-slate-500 hover:text-rose-400"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* TAB 4: VARIABLE EXTRACTION */}
+              {activeTab === 'extraction' && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-200">Response Variable Extractions</h3>
+                      <p className="text-[11px] text-slate-400">
+                        Extract fields from this step's response to dynamically inject into subsequent steps.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        const newRules = [
+                          ...(activeStep.extractionRules || []),
+                          { id: Date.now().toString(), variableName: '', jsonPath: '', description: '' }
+                        ];
+                        handleUpdateActiveStep({ extractionRules: newRules });
+                      }}
+                      className="flex items-center gap-1 text-xs text-purple-400 hover:text-purple-300 font-semibold"
+                    >
+                      <Plus size={12} />
+                      <span>Add Extraction Rule</span>
+                    </button>
+                  </div>
+
+                  {(!activeStep.extractionRules || activeStep.extractionRules.length === 0) ? (
+                    <div className="p-6 rounded-xl border border-dashed text-center text-slate-500 text-xs">
+                      No variable extractions defined for this step. Click "+ Add Extraction Rule" to capture dynamic tokens, IDs, or records.
+                    </div>
+                  ) : (
+                    activeStep.extractionRules.map((rule, rIdx) => (
+                      <div key={rule.id || rIdx} className={`p-3 rounded-xl border flex flex-col gap-2 ${
+                        isDarkMode ? 'bg-slate-900/80 border-slate-800' : 'bg-slate-50 border-slate-200'
+                      }`}>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
+                              Variable Name
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. step1_token"
+                              value={rule.variableName}
+                              onChange={(e) => {
+                                const updated = [...activeStep.extractionRules];
+                                updated[rIdx].variableName = e.target.value;
+                                handleUpdateActiveStep({ extractionRules: updated });
+                              }}
+                              className={`w-full text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                                isDarkMode ? 'bg-slate-950 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                              }`}
+                            />
+                          </div>
+
+                          <div className="flex-1">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
+                              JSON Path / Key
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. token or data.user.id"
+                              value={rule.jsonPath}
+                              onChange={(e) => {
+                                const updated = [...activeStep.extractionRules];
+                                updated[rIdx].jsonPath = e.target.value;
+                                handleUpdateActiveStep({ extractionRules: updated });
+                              }}
+                              className={`w-full text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                                isDarkMode ? 'bg-slate-950 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                              }`}
+                            />
+                          </div>
+
+                          <button
+                            onClick={() => {
+                              const updated = activeStep.extractionRules.filter((_, idx) => idx !== rIdx);
+                              handleUpdateActiveStep({ extractionRules: updated });
+                            }}
+                            className="p-1.5 mt-4 rounded text-slate-500 hover:text-rose-400"
+                            title="Delete rule"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="lg:col-span-5 flex items-center justify-center p-8 text-slate-500 text-xs">
+            Select or create a step to configure
+          </div>
+        )}
+
+        {/* ==================================================== */}
+        {/* RIGHT COLUMN: Response, Metrics & Saved (4 cols)    */}
+        {/* ==================================================== */}
+        <div className={`lg:col-span-4 flex flex-col overflow-y-auto ${
+          isDarkMode ? 'bg-slate-950 text-slate-200' : 'bg-white text-slate-800'
+        }`}>
+          {/* Header Bar */}
+          <div className={`p-3 border-b flex items-center justify-between gap-2 sticky top-0 z-10 ${
+            isDarkMode ? 'bg-slate-900/90 border-slate-800' : 'bg-slate-50 border-slate-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider">Response</span>
+              {activeStepExec.responseStatus !== undefined && (
+                <span className={`text-[11px] font-mono px-2 py-0.5 rounded font-bold ${
+                  activeStepExec.isError
+                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                    : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                }`}>
+                  {activeStepExec.responseStatus} {activeStepExec.responseStatusText}
+                </span>
+              )}
+            </div>
+
+            {/* Action Tools: Save Response & Copy */}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={handleSaveResponse}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                  activeStepExec.response
+                    ? isDarkMode 
+                      ? 'bg-purple-950/60 border-purple-700/80 text-purple-300 hover:bg-purple-900/80 hover:text-white shadow-sm' 
+                      : 'bg-purple-100 border-purple-300 text-purple-800 hover:bg-purple-200'
+                    : 'opacity-50 cursor-not-allowed border-slate-800 text-slate-500'
+                }`}
+                title="Save current response as a persistent baseline for this step"
+              >
+                <Save size={13} className={activeStepExec.response ? 'text-purple-400' : ''} />
+                <span>Save Response</span>
+              </button>
+
+              {activeStepExec.response && (
+                <button
+                  onClick={() => {
+                    const text = typeof activeStepExec.response === 'object' 
+                      ? JSON.stringify(activeStepExec.response, null, 2) 
+                      : String(activeStepExec.response);
+                    navigator.clipboard.writeText(text);
+                  }}
+                  className="p-1 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                  title="Copy response body"
+                >
+                  <Copy size={13} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Metrics bar */}
+          {activeStepExec.responseStatus !== undefined && (
+            <div className={`px-3 py-2 border-b flex items-center justify-between text-[11px] font-mono ${
+              isDarkMode ? 'bg-slate-900/40 border-slate-800 text-slate-400' : 'bg-slate-100/60 border-slate-200 text-slate-600'
+            }`}>
+              <span className="flex items-center gap-1">
+                <Clock size={11} className="text-purple-400" />
+                <span>{activeStepExec.responseTime} ms</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <HardDrive size={11} className="text-purple-400" />
+                <span>{activeStepExec.responseSize}</span>
+              </span>
+            </div>
+          )}
+
+          {/* Saved Response Comparison Banner */}
+          {savedResponseComparison?.hasSaved && (
+            <div className={`p-2.5 mx-3 mt-3 rounded-xl border flex items-center justify-between text-xs ${
+              savedResponseComparison.isMatch === true
+                ? isDarkMode ? 'bg-emerald-950/30 border-emerald-800/60 text-emerald-300' : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                : savedResponseComparison.isMatch === false
+                  ? isDarkMode ? 'bg-amber-950/30 border-amber-800/60 text-amber-300' : 'bg-amber-50 border-amber-300 text-amber-800'
+                  : isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-slate-100 border-slate-300 text-slate-600'
+            }`}>
+              <div className="flex items-center gap-2">
+                <BookmarkCheck size={14} className="text-purple-400 shrink-0" />
+                <div>
+                  <div className="font-bold flex items-center gap-1.5">
+                    <span>Saved Response</span>
+                    {savedResponseComparison.isMatch === true && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 font-mono">
+                        Matches Live
+                      </span>
+                    )}
+                    {savedResponseComparison.isMatch === false && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 font-mono">
+                        Live Differs
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] opacity-75">
+                    Saved on {new Date(savedResponseComparison.savedAt).toLocaleTimeString()}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setViewingSavedResponse(!viewingSavedResponse)}
+                className={`px-2 py-1 rounded text-[11px] font-semibold border ${
+                  viewingSavedResponse 
+                    ? 'bg-purple-600 text-white border-purple-500' 
+                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                }`}
+              >
+                {viewingSavedResponse ? 'View Live' : 'View Saved'}
+              </button>
+            </div>
+          )}
+
+          {/* Response Tabs */}
+          <div className={`flex items-center gap-1 px-3 border-b text-xs font-semibold mt-2 ${
+            isDarkMode ? 'border-slate-800' : 'border-slate-200'
+          }`}>
+            {[
+              { id: 'body', label: 'Response Body' },
+              { id: 'headers', label: `Headers (${Object.keys(activeStepExec.responseHeaders || {}).length})` },
+              { id: 'extracted', label: `Extracted (${Object.keys(activeStepExec.extractedVariables || {}).length})` }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setResponseTab(tab.id)}
+                className={`px-3 py-2 border-b-2 transition-all ${
+                  responseTab === tab.id
+                    ? 'border-purple-500 text-purple-400 font-bold'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Response Payload Display */}
+          <div className="p-3 flex-1 overflow-y-auto">
+            {!activeStepExec.response && !activeStep?.savedResponse ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
+                <Terminal size={32} className="mb-2 opacity-30" />
+                <p className="text-xs font-semibold">No response generated yet</p>
+                <p className="text-[11px] text-slate-600 mt-1 max-w-xs">
+                  Click "Send" or trigger "Run Chained Pipeline" to execute and inspect response payload.
+                </p>
+              </div>
+            ) : responseTab === 'body' ? (
+              /* TAB: Response Body (Live or Saved View) */
+              <div className="relative">
+                {viewingSavedResponse && activeStep?.savedResponse ? (
+                  <div>
+                    <div className="mb-2 text-[11px] font-mono text-purple-400 bg-purple-950/30 p-2 rounded border border-purple-800/40">
+                      Viewing Saved Response Baseline:
+                    </div>
+                    <pre className={`p-3 rounded-xl font-mono text-xs overflow-x-auto border ${
+                      isDarkMode ? 'bg-slate-900/90 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-200 text-slate-800'
+                    }`}>
+                      {JSON.stringify(activeStep.savedResponse.responseBody, null, 2)}
+                    </pre>
+                  </div>
+                ) : (
+                  <pre className={`p-3 rounded-xl font-mono text-xs overflow-x-auto border ${
+                    isDarkMode ? 'bg-slate-900/90 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-200 text-slate-800'
+                  }`}>
+                    {typeof activeStepExec.response === 'object'
+                      ? JSON.stringify(activeStepExec.response, null, 2)
+                      : String(activeStepExec.response || (activeStep?.savedResponse ? JSON.stringify(activeStep.savedResponse.responseBody, null, 2) : ''))}
+                  </pre>
+                )}
+              </div>
+            ) : responseTab === 'headers' ? (
+              /* TAB: Response Headers */
+              <div className="flex flex-col gap-1.5">
+                {Object.entries(activeStepExec.responseHeaders || {}).map(([hk, hv]) => (
+                  <div key={hk} className={`p-2 rounded text-xs font-mono border ${
+                    isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <span className="text-purple-400 font-bold">{hk}: </span>
+                    <span className="text-slate-300 break-all">{hv}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* TAB: Extracted Variables */
+              <div className="flex flex-col gap-2">
+                {Object.keys(activeStepExec.extractedVariables || {}).length === 0 ? (
+                  <div className="text-xs text-slate-500 italic text-center py-6">
+                    No variables extracted in this step execution.
+                  </div>
+                ) : (
+                  Object.entries(activeStepExec.extractedVariables || {}).map(([vk, vv]) => (
+                    <div key={vk} className={`p-2.5 rounded-xl border flex items-center justify-between ${
+                      isDarkMode ? 'bg-purple-950/20 border-purple-800/40 text-purple-200' : 'bg-purple-50 border-purple-200 text-purple-900'
+                    }`}>
+                      <div>
+                        <div className="text-xs font-bold font-mono text-purple-400">{'{{' + vk + '}}'}</div>
+                        <div className="text-xs font-mono text-slate-300 break-all mt-0.5">{String(vv)}</div>
+                      </div>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(String(vv))}
+                        className="p-1 text-slate-400 hover:text-white"
+                        title="Copy variable value"
+                      >
+                        <Copy size={13} />
                       </button>
                     </div>
                   ))
                 )}
               </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 3. CUSTOM ENVIRONMENT MANAGEMENT MODAL                                    */}
+      {/* ========================================================================= */}
+      {showEnvModal && editingEnv && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className={`w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden flex flex-col ${
+            isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+          }`}>
+            {/* Modal Header */}
+            <div className={`p-4 border-b flex items-center justify-between ${
+              isDarkMode ? 'border-slate-800 bg-slate-950/40' : 'border-slate-200 bg-slate-50'
+            }`}>
+              <div className="flex items-center gap-2">
+                <Globe size={18} className="text-purple-400" />
+                <h3 className="text-sm font-bold">
+                  {editingEnv.id ? 'Edit Custom Environment' : 'Create Custom Environment'}
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowEnvModal(false);
+                  setEditingEnv(null);
+                }}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+              >
+                <X size={16} />
+              </button>
             </div>
 
-            {/* Modal Actions */}
-            <div className="flex items-center justify-between pt-3 border-t">
+            {/* Modal Form */}
+            <div className="p-5 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
               <div>
-                {envSaveStatus && envSaveStatus.envId === activeEnv.id && (
-                  <span className={`text-xs font-bold ${
-                    envSaveStatus.status === 'success' ? 'text-emerald-400' : 'text-rose-400'
-                  }`}>
-                    {envSaveStatus.msg || 'Saving...'}
-                  </span>
-                )}
+                <label className="text-xs font-bold text-slate-300 block mb-1">
+                  Environment Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. QA-Cluster-02 or UAT-Gateway"
+                  value={editingEnv.name}
+                  onChange={(e) => setEditingEnv({ ...editingEnv, name: e.target.value })}
+                  className={`w-full text-xs font-semibold px-3 py-2 rounded-lg border focus:outline-none ${
+                    isDarkMode ? 'bg-slate-950 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                  }`}
+                />
               </div>
 
-              <div className="flex items-center space-x-2">
+              {/* Dynamic Variables Table */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-slate-300">
+                    Environment Variables (Key-Value)
+                  </label>
+                  <button
+                    onClick={() => {
+                      const newVars = { ...(editingEnv.variables || {}), [`var_${Date.now()}`]: '' };
+                      setEditingEnv({ ...editingEnv, variables: newVars });
+                    }}
+                    className="flex items-center gap-1 text-xs text-purple-400 hover:text-purple-300 font-semibold"
+                  >
+                    <Plus size={12} />
+                    <span>Add Variable</span>
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  {Object.entries(editingEnv.variables || {}).map(([key, val], vIdx) => (
+                    <div key={vIdx} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Variable Key (e.g. baseUrl)"
+                        value={key}
+                        onChange={(e) => {
+                          const newKey = e.target.value;
+                          const newVars = {};
+                          Object.entries(editingEnv.variables).forEach(([k, v]) => {
+                            if (k === key) {
+                              newVars[newKey] = v;
+                            } else {
+                              newVars[k] = v;
+                            }
+                          });
+                          setEditingEnv({ ...editingEnv, variables: newVars });
+                        }}
+                        className={`w-1/3 text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                          isDarkMode ? 'bg-slate-950 border-slate-700 text-purple-300 font-bold' : 'bg-white border-slate-300 text-purple-800 font-bold'
+                        }`}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Variable Value"
+                        value={val}
+                        onChange={(e) => {
+                          setEditingEnv({
+                            ...editingEnv,
+                            variables: { ...editingEnv.variables, [key]: e.target.value }
+                          });
+                        }}
+                        className={`flex-1 text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                          isDarkMode ? 'bg-slate-950 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                        }`}
+                      />
+                      <button
+                        onClick={() => {
+                          const newVars = { ...editingEnv.variables };
+                          delete newVars[key];
+                          setEditingEnv({ ...editingEnv, variables: newVars });
+                        }}
+                        className="p-1 rounded text-slate-500 hover:text-rose-400"
+                        title="Delete variable"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {envSaveStatus && (
+                <div className={`p-2.5 rounded-lg text-xs font-semibold ${
+                  envSaveStatus.type === 'error' ? 'bg-rose-950/40 border border-rose-800 text-rose-300' : 'bg-purple-950/40 text-purple-300'
+                }`}>
+                  {envSaveStatus.message}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className={`p-4 border-t flex items-center justify-between ${
+              isDarkMode ? 'border-slate-800 bg-slate-950/40' : 'border-slate-200 bg-slate-50'
+            }`}>
+              {editingEnv.id ? (
                 <button
-                  onClick={() => handleSaveEnvironment(activeEnv)}
-                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs px-3.5 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                  onClick={(e) => {
+                    handleDeleteCustomEnv(editingEnv.id, e);
+                    setShowEnvModal(false);
+                  }}
+                  className="flex items-center gap-1 text-xs font-semibold text-rose-400 hover:text-rose-300"
                 >
-                  <Save className="h-3.5 w-3.5 text-purple-400" />
-                  <span>Save Variables</span>
+                  <Trash2 size={13} />
+                  <span>Delete Environment</span>
+                </button>
+              ) : <div />}
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setShowEnvModal(false);
+                    setEditingEnv(null);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200"
+                >
+                  Cancel
                 </button>
                 <button
-                  onClick={() => setShowEnvModal(false)}
-                  className="bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+                  onClick={handleSaveCustomEnv}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 shadow-md transition-all"
                 >
-                  Done
+                  <Save size={13} />
+                  <span>{editingEnv.id ? 'Save Changes' : 'Create Environment'}</span>
                 </button>
               </div>
             </div>
-
           </div>
         </div>
       )}
 
+      {/* ========================================================================= */}
+      {/* 4. TEMPLATES & QUICK REFERENCE SNIPPETS DRAWER                              */}
+      {/* ========================================================================= */}
+      <SnippetDrawer
+        isOpen={showSnippetDrawer}
+        onClose={() => setShowSnippetDrawer(false)}
+        onApplySnippet={handleApplySnippet}
+        onInsertVariable={handleInsertVariable}
+        runtimeVars={runtimeVars}
+        activeEnv={activeEnv}
+        isDarkMode={isDarkMode}
+        projectId={projectId}
+        activeStepName={activeStep ? activeStep.name : 'Step 1'}
+      />
     </div>
   );
 }

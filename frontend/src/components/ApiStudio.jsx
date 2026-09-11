@@ -8,6 +8,7 @@ import {
   HardDrive,
   Copy,
   Check,
+  X,
   Plus,
   Trash2,
   Settings2,
@@ -527,7 +528,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
       setPipelineLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), msg, type }]);
     };
 
-    addLog(`🚀 Initializing Multi-Phase Chained Pipeline for Project: "${currentProject.name}"`, 'info');
+    addLog(`[INIT] Initializing Multi-Phase Chained Pipeline for Project: "${currentProject.name}"`, 'info');
     addLog(`Environment: ${activeEnv.name} | Total Pipeline Steps: ${steps.length}`, 'info');
 
     let currentContext = { ...runtimeVars };
@@ -535,28 +536,28 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
       addLog(`----------------------------------------`, 'info');
-      addLog(`▶ Executing Step ${i + 1}/${steps.length}: [${step.method}] ${step.name}`, 'info');
+      addLog(`[RUN] Executing Step ${i + 1}/${steps.length}: [${step.method}] ${step.name}`, 'info');
       setActiveStepIndex(i);
 
       const result = await executeStep(i, currentContext);
 
       if (!result.success) {
-        addLog(`❌ Step ${i + 1} FAILED with HTTP ${result.data?.status_code || 500} (${result.data?.status_text || 'Error'}).`, 'error');
-        addLog(`⛔ Pipeline halted at Step ${i + 1}. Subsequent steps will NOT be executed.`, 'error');
+        addLog(`[ERROR] Step ${i + 1} FAILED with HTTP ${result.data?.status_code || 500} (${result.data?.status_text || 'Error'}).`, 'error');
+        addLog(`[HALTED] Pipeline halted at Step ${i + 1}. Subsequent steps will NOT be executed.`, 'error');
         setIsRunningPipeline(false);
         return;
       }
 
-      addLog(`✓ Step ${i + 1} Succeeded! HTTP ${result.data.status_code} in ${result.data.time_ms}ms.`, 'success');
+      addLog(`[SUCCESS] Step ${i + 1} Succeeded! HTTP ${result.data.status_code} in ${result.data.time_ms}ms.`, 'success');
 
       // Check variable extractions
       if (step.extractionRules && step.extractionRules.length > 0) {
         step.extractionRules.forEach(r => {
           if (r.targetVar && result.extracted[r.targetVar] !== undefined) {
             const previewVal = String(result.extracted[r.targetVar]);
-            addLog(`  • Extracted {{${r.targetVar}}}: ${previewVal.length > 25 ? previewVal.substring(0, 25) + '...' : previewVal}`, 'success');
+            addLog(`  [EXTRACT] Extracted {{${r.targetVar}}}: ${previewVal.length > 25 ? previewVal.substring(0, 25) + '...' : previewVal}`, 'success');
           } else if (r.targetVar) {
-            addLog(`  ⚠ Extraction warning: Path "${r.sourcePath}" not found in response for {{${r.targetVar}}}`, 'error');
+            addLog(`  [WARN] Extraction warning: Path "${r.sourcePath}" not found in response for {{${r.targetVar}}}`, 'error');
           }
         });
       }
@@ -570,7 +571,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
     }
 
     addLog(`----------------------------------------`, 'info');
-    addLog(`🎉 Chained Pipeline completed successfully across all ${steps.length} steps with 100% data integrity!`, 'success');
+    addLog(`[COMPLETE] Chained Pipeline completed successfully across all ${steps.length} steps with 100% data integrity.`, 'success');
     setIsRunningPipeline(false);
   };
 
@@ -1541,8 +1542,8 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                   </p>
                 </div>
               </div>
-              <button onClick={() => setShowEnvModal(false)} className="text-zinc-500 hover:text-zinc-300 font-bold p-1 cursor-pointer">
-                ✕
+              <button onClick={() => setShowEnvModal(false)} className="text-zinc-500 hover:text-zinc-300 p-1 cursor-pointer transition">
+                <X className="h-4 w-4" />
               </button>
             </div>
 

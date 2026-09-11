@@ -598,7 +598,7 @@ def get_all_users(current_user):
     users = User.query.order_by(User.id).all()
     return jsonify([u.to_dict() for u in users])
 
-@app.route('/api/admin/users/<int:user_id>', methods=['PUT'])
+@app.route('/api/admin/users/<int:user_id>', methods=['PUT', 'PATCH'])
 @token_required
 @admin_required
 def edit_user(current_user, user_id):
@@ -621,9 +621,15 @@ def edit_user(current_user, user_id):
     if role:
         target_user.role = role
     if status:
-        if status not in ['PENDING', 'APPROVED', 'REJECTED']:
-            return jsonify({'error': 'Invalid status'}), 400
-        target_user.status = status
+        status_upper = status.upper()
+        if status_upper in ['PENDING_APPROVAL', 'PENDING']:
+            target_user.status = 'PENDING'
+        elif status_upper in ['APPROVED', 'ACTIVE']:
+            target_user.status = 'APPROVED'
+        elif status_upper in ['SUSPENDED', 'REJECTED']:
+            target_user.status = 'REJECTED'
+        else:
+            return jsonify({'error': f'Invalid status: {status}'}), 400
     if phone is not None:
         target_user.phone = phone
     if bio is not None:
@@ -636,13 +642,26 @@ def edit_user(current_user, user_id):
         user_id=current_user.id,
         username=current_user.email,
         action="USER_EDIT",
-        description=f"Super Administrator edited profile of user {target_user.email} (Name: {target_user.name}, Dept: {target_user.department}, Role: {target_user.role}, Status: {target_user.status})."
+        description=f"User {target_user.name} ({target_user.email}) updated by {current_user.name} (Role: {target_user.role}, Dept: {target_user.department}, Status: {target_user.status})."
     )
     db.session.add(audit)
+
+    # Activity Log for compliance feed
+    first_proj = Project.query.first()
+    if first_proj:
+        db.session.add(ActivityLog(
+            project_id=first_proj.id,
+            user_id=current_user.id,
+            user_name=current_user.name,
+            user_email=current_user.email,
+            user_role=current_user.role,
+            action_type='UPDATE_USER',
+            details=f"User {target_user.name} ({target_user.email}) updated by {current_user.name} ({current_user.role})."
+        ))
     db.session.commit()
     
     return jsonify({
-        'message': 'User details successfully updated.',
+        'message': f"User {target_user.name} details successfully updated.",
         'user': target_user.to_dict()
     })
 

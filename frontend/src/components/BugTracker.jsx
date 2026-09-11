@@ -31,6 +31,7 @@ import {
   ExternalLink,
   Info,
   Check,
+  X,
   Flame,
   ArrowLeft,
   RefreshCw,
@@ -931,11 +932,12 @@ export default function BugTracker({ activeProject, isDarkMode, authUser, onBack
               </div>
               <button
                 onClick={() => setIsReportModalOpen(false)}
-                className={`p-1.5 rounded-lg border transition ${
+                className={`p-1.5 rounded-lg border transition cursor-pointer ${
                   isDarkMode ? 'border-zinc-800 text-zinc-400 hover:bg-zinc-800' : 'border-slate-200 text-slate-400 hover:bg-slate-100'
                 }`}
+                title="Close Modal"
               >
-                ✕
+                <X className="h-4 w-4" />
               </button>
             </div>
 
@@ -1111,11 +1113,12 @@ export default function BugTracker({ activeProject, isDarkMode, authUser, onBack
                 )}
                 <button
                   onClick={() => setActiveBugModal(null)}
-                  className={`p-1.5 rounded-lg border transition ${
+                  className={`p-1.5 rounded-lg border transition cursor-pointer ${
                     isDarkMode ? 'border-zinc-800 text-zinc-400 hover:bg-zinc-800' : 'border-slate-200 text-slate-400 hover:bg-slate-100'
                   }`}
+                  title="Close Modal"
                 >
-                  ✕
+                  <X className="h-4 w-4" />
                 </button>
               </div>
             </div>

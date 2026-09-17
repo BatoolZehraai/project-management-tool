@@ -400,3 +400,114 @@ class ApiSnippet(db.Model):
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
 
+
+class Meeting(db.Model):
+    __tablename__ = 'meetings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id', ondelete='CASCADE'), nullable=False, index=True)
+    phase_id = db.Column(db.Integer, db.ForeignKey('project_phases.id', ondelete='SET NULL'), nullable=True)
+    title = db.Column(db.String(200), nullable=False)
+    agenda = db.Column(db.Text, nullable=True)
+    room_name = db.Column(db.String(120), nullable=False)
+    meeting_link = db.Column(db.String(350), nullable=False)
+    scheduled_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    duration_minutes = db.Column(db.Integer, default=30)
+    status = db.Column(db.String(30), default='SCHEDULED', nullable=False)  # 'SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'
+    created_by_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    project = db.relationship('Project', backref=db.backref('meetings', cascade='all, delete-orphan'))
+    phase = db.relationship('ProjectPhase', backref=db.backref('meetings'))
+    creator = db.relationship('User', foreign_keys=[created_by_id])
+    attendees = db.relationship('MeetingAttendee', backref='meeting', cascade='all, delete-orphan', lazy=True)
+    mom = db.relationship('MeetingMoM', backref='meeting', uselist=False, cascade='all, delete-orphan', lazy=True)
+
+    def to_dict(self):
+        phase_name = self.phase.name if self.phase else 'General / All Stages'
+        return {
+            'id': self.id,
+            'project_id': self.project_id,
+            'project_name': self.project.name if self.project else None,
+            'phase_id': self.phase_id,
+            'phase_name': phase_name,
+            'title': self.title,
+            'agenda': self.agenda or '',
+            'room_name': self.room_name,
+            'meeting_link': self.meeting_link,
+            'scheduled_at': self.scheduled_at.isoformat() if self.scheduled_at else None,
+            'duration_minutes': self.duration_minutes or 30,
+            'status': self.status,
+            'created_by_id': self.created_by_id,
+            'created_by_name': self.creator.name if self.creator else 'System',
+            'created_by_email': self.creator.email if self.creator else None,
+            'attendees': [a.to_dict() for a in self.attendees],
+            'mom': self.mom.to_dict() if self.mom else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class MeetingAttendee(db.Model):
+    __tablename__ = 'meeting_attendees'
+
+    id = db.Column(db.Integer, primary_key=True)
+    meeting_id = db.Column(db.Integer, db.ForeignKey('meetings.id', ondelete='CASCADE'), nullable=False, index=True)
+    email = db.Column(db.String(150), nullable=False)
+    role_designation = db.Column(db.String(100), default='Participant')
+    invitation_sent_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'meeting_id': self.meeting_id,
+            'email': self.email,
+            'role_designation': self.role_designation,
+            'invitation_sent_at': self.invitation_sent_at.isoformat() if self.invitation_sent_at else None
+        }
+
+
+class MeetingMoM(db.Model):
+    __tablename__ = 'meeting_moms'
+
+    id = db.Column(db.Integer, primary_key=True)
+    meeting_id = db.Column(db.Integer, db.ForeignKey('meetings.id', ondelete='CASCADE'), nullable=False, unique=True, index=True)
+    content_markdown = db.Column(db.Text, nullable=True)
+    decisions_json = db.Column(db.Text, default='[]')  # JSON array of strings
+    action_items_json = db.Column(db.Text, default='[]')  # JSON array of {description, assignee, due_date, status}
+    signoff_status = db.Column(db.String(30), default='PENDING', nullable=False)  # 'APPROVED', 'PENDING', 'REJECTED'
+    recorded_by_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    recorded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    recorder = db.relationship('User', foreign_keys=[recorded_by_id])
+
+    def to_dict(self):
+        import json
+        decisions = []
+        action_items = []
+        try:
+            decisions = json.loads(self.decisions_json) if self.decisions_json else []
+        except Exception:
+            decisions = []
+        try:
+            action_items = json.loads(self.action_items_json) if self.action_items_json else []
+        except Exception:
+            action_items = []
+
+        return {
+            'id': self.id,
+            'meeting_id': self.meeting_id,
+            'content_markdown': self.content_markdown or '',
+            'decisions': decisions,
+            'action_items': action_items,
+            'signoff_status': self.signoff_status,
+            'recorded_by_id': self.recorded_by_id,
+            'recorded_by_name': self.recorder.name if self.recorder else 'Secretary',
+            'recorded_at': self.recorded_at.isoformat() if self.recorded_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+

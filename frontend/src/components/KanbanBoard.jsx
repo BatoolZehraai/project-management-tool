@@ -63,7 +63,7 @@ export default function KanbanBoard({
       title: 'Planned / Backlog',
       color: 'border-indigo-500/30',
       dotColor: 'bg-indigo-400',
-      tasks: filteredTasks.filter(t => t.status === 'Planned' || t.status === 'Backlog' || t.status === 'Todo')
+      tasks: filteredTasks.filter(t => t.status === 'Planned' || t.status === 'Backlog' || t.status === 'Todo' || t.status === 'To Do' || !t.status)
     },
     {
       id: 'In Progress',
@@ -333,9 +333,16 @@ export default function KanbanBoard({
                               {col.id !== 'Planned' && (
                                 <button
                                   type="button"
-                                  onClick={() => onMoveTaskStatus(task.id, col.id === 'Completed' ? 'In Progress' : 'Planned')}
-                                  className={`p-1 rounded-md border transition hover:bg-zinc-800 text-zinc-400 hover:text-white cursor-pointer`}
-                                  title="Move Left"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onMoveTaskStatus(task.id, col.id === 'Completed' ? 'In Progress' : 'Planned');
+                                  }}
+                                  className={`p-1 rounded-md border transition cursor-pointer ${
+                                    isDarkMode
+                                      ? 'border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800 hover:border-zinc-700'
+                                      : 'border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                                  }`}
+                                  title={`Move Left (${col.id === 'Completed' ? 'In Progress' : 'Planned'})`}
                                 >
                                   <ArrowLeft className="h-3 w-3" />
                                 </button>
@@ -343,9 +350,16 @@ export default function KanbanBoard({
                               {col.id !== 'Completed' && (
                                 <button
                                   type="button"
-                                  onClick={() => onMoveTaskStatus(task.id, col.id === 'Planned' ? 'In Progress' : 'Completed')}
-                                  className={`p-1 rounded-md border transition hover:bg-zinc-800 text-zinc-400 hover:text-white cursor-pointer`}
-                                  title="Move Right"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onMoveTaskStatus(task.id, col.id === 'Planned' ? 'In Progress' : 'Completed');
+                                  }}
+                                  className={`p-1 rounded-md border transition cursor-pointer ${
+                                    isDarkMode
+                                      ? 'border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800 hover:border-zinc-700'
+                                      : 'border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                                  }`}
+                                  title={`Move Right (${col.id === 'Planned' ? 'In Progress' : 'Completed'})`}
                                 >
                                   <ArrowRight className="h-3 w-3" />
                                 </button>

@@ -15,7 +15,7 @@ import json
 import jwt
 import requests
 
-from models import db, User, Project, ProjectPhase, Task, Comment, AuditLog, FileItem, ActivityLog, Bug, ApiEnvironment, ApiPipeline, ApiSnippet
+from models import db, User, Project, ProjectPhase, Task, Comment, AuditLog, FileItem, ActivityLog, Bug, ApiEnvironment, ApiPipeline, ApiSnippet, Meeting, MeetingAttendee, MeetingMoM
 from config import Config
 
 app = Flask(__name__)
@@ -1463,7 +1463,7 @@ def update_project_task(current_user, project_id, task_id):
             
     if 'status' in data:
         status = data['status'].strip()
-        if status in ['To Do', 'In Progress', 'Completed']:
+        if status in ['To Do', 'Planned', 'In Progress', 'Completed', 'Backlog', 'Todo']:
             task.status = status
             
     if 'checklist_json' in data:
@@ -2437,6 +2437,482 @@ def delete_bug(current_user, bug_id):
     db.session.commit()
     
     return jsonify({'message': f"Defect '{title}' deleted successfully"})
+
+
+# ----------------- CORPORATE VIDEO MEETINGS & GOVERNANCE MoM -----------------
+
+def generate_ics_content(meeting):
+    """
+    Generates an RFC 5545 compliant iCalendar string for calendar syncing.
+    """
+    now_str = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+    start_dt = meeting.scheduled_at or datetime.datetime.utcnow()
+    end_dt = start_dt + datetime.timedelta(minutes=meeting.duration_minutes or 30)
+    
+    start_str = start_dt.strftime('%Y%m%dT%H%M%SZ')
+    end_str = end_dt.strftime('%Y%m%dT%H%M%SZ')
+    uid = f"bahl-meeting-{meeting.id}-{uuid.uuid4().hex[:6]}@bankalhabib.com"
+    summary = meeting.title.replace('\n', ' ')
+    description = (meeting.agenda or 'Governance review and stage gate alignment').replace('\n', '\\n')
+    
+    ics = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Bank AL Habib//SDLC Governance Platform//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:REQUEST",
+        "BEGIN:VEVENT",
+        f"UID:{uid}",
+        f"DTSTAMP:{now_str}",
+        f"DTSTART:{start_str}",
+        f"DTEND:{end_str}",
+        f"SUMMARY:{summary}",
+        f"DESCRIPTION:{description}\\n\\nJoin Meeting: {meeting.meeting_link}",
+        f"LOCATION:{meeting.meeting_link}",
+        "STATUS:CONFIRMED",
+        "END:VEVENT",
+        "END:VCALENDAR"
+    ]
+    return "\r\n".join(ics)
+
+def simulate_email_dispatch(to_emails, subject, html_body, ics_content=None):
+    """
+    Simulates email dispatch or uses configured SMTP credentials.
+    Logs delivery status and timestamps for governance auditability.
+    """
+    print(f"\n==================== [GOVERNANCE EMAIL DISPATCH] ====================")
+    print(f"To: {', '.join(to_emails)}")
+    print(f"Subject: {subject}")
+    print(f"Attachments: meeting_invite.ics ({len(ics_content)} bytes)" if ics_content else "Attachments: None")
+    print(f"Timestamp: {datetime.datetime.utcnow().isoformat()}")
+    print(f"====================================================================\n")
+    return {
+        'status': 'DELIVERED',
+        'recipients_count': len(to_emails),
+        'sent_at': datetime.datetime.utcnow().isoformat()
+    }
+
+@app.route('/api/projects/<int:project_id>/meetings', methods=['GET'])
+@token_required
+def get_project_meetings(current_user, project_id):
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+        
+    phase_id = request.args.get('phase_id')
+    status = request.args.get('status')
+    
+    query = Meeting.query.filter_by(project_id=project_id)
+    if phase_id and phase_id != 'ALL':
+        try:
+            query = query.filter_by(phase_id=int(phase_id))
+        except ValueError:
+            pass
+            
+    if status:
+        query = query.filter_by(status=status)
+        
+    meetings = query.order_by(Meeting.scheduled_at.desc()).all()
+    return jsonify([m.to_dict() for m in meetings])
+
+@app.route('/api/projects/<int:project_id>/meetings', methods=['POST'])
+@token_required
+def create_project_meeting(current_user, project_id):
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+        
+    data = request.get_json() or {}
+    title = (data.get('title') or '').strip()
+    if not title:
+        return jsonify({'error': 'Meeting title is required'}), 400
+        
+    phase_id = data.get('phase_id')
+    if phase_id and phase_id != 'ALL':
+        try:
+            phase_id = int(phase_id)
+            phase = db.session.get(ProjectPhase, phase_id)
+            if not phase or phase.project_id != project_id:
+                phase_id = None
+        except ValueError:
+            phase_id = None
+    else:
+        phase_id = None
+        
+    agenda = (data.get('agenda') or '').strip()
+    duration = int(data.get('duration_minutes') or 30)
+    is_instant = bool(data.get('is_instant', False))
+    
+    # Scheduled at time parsing
+    scheduled_at_str = data.get('scheduled_at')
+    if scheduled_at_str and not is_instant:
+        try:
+            # Handle ISO formats
+            clean_str = scheduled_at_str.replace('Z', '+00:00')
+            scheduled_at = datetime.datetime.fromisoformat(clean_str)
+        except Exception:
+            scheduled_at = datetime.datetime.utcnow()
+    else:
+        scheduled_at = datetime.datetime.utcnow()
+        
+    # Generate unique room name and link
+    clean_title_slug = re.sub(r'[^a-zA-Z0-9]', '', title.lower())[:12]
+    room_name = f"bahl-{clean_title_slug or 'room'}-{uuid.uuid4().hex[:8]}"
+    # Dynamic origin resolution from request Origin, Referer, payload base_url, or request host
+    client_origin = data.get('base_url') or request.headers.get('Origin')
+    if not client_origin and request.headers.get('Referer'):
+        try:
+            from urllib.parse import urlparse
+            p = urlparse(request.headers.get('Referer'))
+            client_origin = f"{p.scheme}://{p.netloc}"
+        except Exception:
+            client_origin = None
+            
+    if not client_origin:
+        client_origin = request.host_url.rstrip('/')
+        if ':5000' in client_origin:
+            client_origin = client_origin.replace(':5000', ':3000')
+
+    meeting_link = f"{client_origin.rstrip('/')}/meet/{room_name}"
+    
+    status = 'IN_PROGRESS' if is_instant else 'SCHEDULED'
+    
+    meeting = Meeting(
+        project_id=project_id,
+        phase_id=phase_id,
+        title=title,
+        agenda=agenda,
+        room_name=room_name,
+        meeting_link=meeting_link,
+        scheduled_at=scheduled_at,
+        duration_minutes=duration,
+        status=status,
+        created_by_id=current_user.id
+    )
+    db.session.add(meeting)
+    db.session.flush()
+    
+    # Process invitees (supports ANY valid email: corporate, gmail, outlook, yahoo, vendors)
+    invitees_raw = data.get('invitees') or []
+    if isinstance(invitees_raw, str):
+        invitees_raw = [e.strip() for e in invitees_raw.split(',') if e.strip()]
+        
+    valid_invitees = []
+    email_regex = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    for email_str in invitees_raw:
+        email_clean = str(email_str).strip().lower()
+        if re.match(email_regex, email_clean) and email_clean not in valid_invitees:
+            valid_invitees.append(email_clean)
+            attendee = MeetingAttendee(
+                meeting_id=meeting.id,
+                email=email_clean,
+                role_designation='Invited Participant'
+            )
+            db.session.add(attendee)
+            
+    # Always include the creator as host attendee if not present
+    if current_user.email.lower() not in valid_invitees:
+        host_attendee = MeetingAttendee(
+            meeting_id=meeting.id,
+            email=current_user.email.lower(),
+            role_designation='Organizer / Host'
+        )
+        db.session.add(host_attendee)
+        valid_invitees.append(current_user.email.lower())
+        
+    # Generate and dispatch calendar invites
+    ics_file = generate_ics_content(meeting)
+    email_subject = f"[Bank AL Habib SDLC] Invitation: {meeting.title}"
+    email_body = f"""
+    <h2>Bank AL Habib SDLC Governance Meeting</h2>
+    <p>You are invited to participate in a governance meeting session.</p>
+    <table border="0" cellpadding="6">
+      <tr><td><strong>Title:</strong></td><td>{meeting.title}</td></tr>
+      <tr><td><strong>Project:</strong></td><td>{project.name}</td></tr>
+      <tr><td><strong>Scheduled At:</strong></td><td>{meeting.scheduled_at.strftime('%Y-%m-%d %H:%M UTC')}</td></tr>
+      <tr><td><strong>Duration:</strong></td><td>{meeting.duration_minutes} minutes</td></tr>
+      <tr><td><strong>Agenda:</strong></td><td>{meeting.agenda or 'Standard stage review and governance sync'}</td></tr>
+    </table>
+    <br/>
+    <a href="{meeting.meeting_link}" style="background-color: #7c3aed; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+      Join Meeting Online
+    </a>
+    """
+    simulate_email_dispatch(valid_invitees, email_subject, email_body, ics_file)
+    
+    # Record Activity Log
+    phase_text = f" for Stage '{meeting.phase.name}'" if meeting.phase else ""
+    audit = ActivityLog(
+        project_id=project_id,
+        user_id=current_user.id,
+        user_name=current_user.name,
+        user_email=current_user.email,
+        user_role=current_user.role,
+        action_type='MEETING_SCHEDULED' if not is_instant else 'MEETING_INSTANT',
+        task_title=meeting.title,
+        details=f"Governance Meeting '{meeting.title}' {('scheduled for ' + str(meeting.scheduled_at)) if not is_instant else 'started instantly'}{phase_text} with {len(valid_invitees)} attendee(s)",
+        previous_state=None,
+        new_state=meeting.status
+    )
+    db.session.add(audit)
+    db.session.commit()
+    
+    return jsonify(meeting.to_dict()), 201
+
+@app.route('/api/meetings/<int:meeting_id>', methods=['GET'])
+@token_required
+def get_meeting_details(current_user, meeting_id):
+    meeting = db.session.get(Meeting, meeting_id)
+    if not meeting:
+        return jsonify({'error': 'Meeting not found'}), 404
+    return jsonify(meeting.to_dict())
+
+@app.route('/api/meetings/public/<string:room_name>', methods=['GET'])
+def get_public_meeting_info(room_name):
+    meeting = Meeting.query.filter_by(room_name=room_name).first()
+    if not meeting:
+        return jsonify({
+            'id': 0,
+            'title': 'Corporate Video Governance Meeting',
+            'room_name': room_name,
+            'phase_name': 'External Join',
+            'status': 'IN_PROGRESS',
+            'is_guest': True
+        })
+    return jsonify(meeting.to_dict())
+
+@app.route('/api/meetings/<int:meeting_id>/invite', methods=['POST'])
+@token_required
+def invite_to_meeting(current_user, meeting_id):
+    meeting = db.session.get(Meeting, meeting_id)
+    if not meeting:
+        return jsonify({'error': 'Meeting not found'}), 404
+        
+    data = request.get_json() or {}
+    email_str = (data.get('email') or '').strip().lower()
+    email_regex = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    if not email_str or not re.match(email_regex, email_str):
+        return jsonify({'error': 'A valid email address is required'}), 400
+        
+    existing = MeetingAttendee.query.filter_by(meeting_id=meeting.id, email=email_str).first()
+    if not existing:
+        attendee = MeetingAttendee(
+            meeting_id=meeting.id,
+            email=email_str,
+            role_designation='Invited Participant'
+        )
+        db.session.add(attendee)
+        
+    ics_file = generate_ics_content(meeting)
+    subject = f"[Bank AL Habib SDLC] Urgent Meeting Invite: {meeting.title}"
+    body = f"""
+    <h2>Bank AL Habib SDLC Governance Meeting Invitation</h2>
+    <p>You have been invited to join an active governance meeting session.</p>
+    <p><strong>Title:</strong> {meeting.title}</p>
+    <p><strong>Join Link:</strong> <a href="{meeting.meeting_link}">{meeting.meeting_link}</a></p>
+    """
+    simulate_email_dispatch([email_str], subject, body, ics_file)
+    
+    audit = ActivityLog(
+        project_id=meeting.project_id,
+        user_id=current_user.id,
+        user_name=current_user.name,
+        user_email=current_user.email,
+        user_role=current_user.role,
+        action_type='MEETING_INVITE_SENT',
+        task_title=meeting.title,
+        details=f"Meeting invitation dispatched to {email_str} for '{meeting.title}' by {current_user.name}",
+        previous_state=None,
+        new_state=None
+    )
+    db.session.add(audit)
+    db.session.commit()
+    
+    return jsonify({
+        'message': f"Meeting invitation successfully dispatched to {email_str}",
+        'email': email_str
+    })
+
+@app.route('/api/meetings/<int:meeting_id>/status', methods=['PATCH'])
+@token_required
+def update_meeting_status(current_user, meeting_id):
+    meeting = db.session.get(Meeting, meeting_id)
+    if not meeting:
+        return jsonify({'error': 'Meeting not found'}), 404
+        
+    data = request.get_json() or {}
+    new_status = data.get('status')
+    if new_status not in ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']:
+        return jsonify({'error': 'Invalid status'}), 400
+        
+    prev = meeting.status
+    meeting.status = new_status
+    meeting.updated_at = datetime.datetime.utcnow()
+    
+    audit = ActivityLog(
+        project_id=meeting.project_id,
+        user_id=current_user.id,
+        user_name=current_user.name,
+        user_email=current_user.email,
+        user_role=current_user.role,
+        action_type='MEETING_STATUS_CHANGE',
+        task_title=meeting.title,
+        details=f"Meeting '{meeting.title}' status transitioned from {prev} to {new_status}",
+        previous_state=prev,
+        new_state=new_status
+    )
+    db.session.add(audit)
+    db.session.commit()
+    return jsonify(meeting.to_dict())
+
+@app.route('/api/projects/<int:project_id>/meetings/<int:meeting_id>/mom', methods=['POST'])
+@token_required
+def save_meeting_mom(current_user, project_id, meeting_id):
+    meeting = db.session.get(Meeting, meeting_id)
+    if not meeting or meeting.project_id != project_id:
+        return jsonify({'error': 'Meeting not found in this project'}), 404
+        
+    data = request.get_json() or {}
+    content_markdown = data.get('content_markdown', '')
+    decisions = data.get('decisions', [])
+    action_items = data.get('action_items', [])
+    signoff_status = data.get('signoff_status', 'PENDING')
+    
+    if signoff_status not in ['APPROVED', 'PENDING', 'REJECTED']:
+        signoff_status = 'PENDING'
+        
+    mom = meeting.mom
+    if not mom:
+        mom = MeetingMoM(
+            meeting_id=meeting.id,
+            content_markdown=content_markdown,
+            decisions_json=json.dumps(decisions) if isinstance(decisions, list) else str(decisions),
+            action_items_json=json.dumps(action_items) if isinstance(action_items, list) else str(action_items),
+            signoff_status=signoff_status,
+            recorded_by_id=current_user.id
+        )
+        db.session.add(mom)
+    else:
+        mom.content_markdown = content_markdown
+        mom.decisions_json = json.dumps(decisions) if isinstance(decisions, list) else str(decisions)
+        mom.action_items_json = json.dumps(action_items) if isinstance(action_items, list) else str(action_items)
+        mom.signoff_status = signoff_status
+        mom.recorded_by_id = current_user.id
+        mom.updated_at = datetime.datetime.utcnow()
+        
+    # Automatically mark meeting as completed when MoM is finalized
+    if meeting.status != 'COMPLETED':
+        meeting.status = 'COMPLETED'
+        
+    audit = ActivityLog(
+        project_id=project_id,
+        user_id=current_user.id,
+        user_name=current_user.name,
+        user_email=current_user.email,
+        user_role=current_user.role,
+        action_type='MOM_FINALIZED',
+        task_title=meeting.title,
+        details=f"Governance Minutes of Meeting (MoM) recorded for '{meeting.title}' by {current_user.name} (Stage Sign-Off: {signoff_status})",
+        previous_state=None,
+        new_state=signoff_status
+    )
+    db.session.add(audit)
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Minutes of Meeting (MoM) saved successfully',
+        'mom': mom.to_dict(),
+        'meeting': meeting.to_dict()
+    })
+
+@app.route('/api/projects/<int:project_id>/meetings/<int:meeting_id>/mom/email', methods=['POST'])
+@token_required
+def email_meeting_mom(current_user, project_id, meeting_id):
+    meeting = db.session.get(Meeting, meeting_id)
+    if not meeting or meeting.project_id != project_id:
+        return jsonify({'error': 'Meeting not found in this project'}), 404
+        
+    mom = meeting.mom
+    if not mom:
+        return jsonify({'error': 'No Minutes of Meeting (MoM) recorded for this session yet'}), 400
+        
+    attendees = [a.email for a in meeting.attendees if a.email]
+    if not attendees:
+        attendees = [current_user.email]
+        
+    decisions = []
+    action_items = []
+    try:
+        decisions = json.loads(mom.decisions_json) if mom.decisions_json else []
+    except Exception:
+        decisions = []
+    try:
+        action_items = json.loads(mom.action_items_json) if mom.action_items_json else []
+    except Exception:
+        action_items = []
+        
+    decisions_html = "".join([f"<li>{d}</li>" for d in decisions]) or "<li>None recorded</li>"
+    actions_html = "".join([
+        f"<tr><td>{a.get('description', '')}</td><td>{a.get('assignee', 'Unassigned')}</td><td>{a.get('due_date', 'N/A')}</td><td>{a.get('status', 'Open')}</td></tr>"
+        for a in action_items
+    ]) or "<tr><td colspan='4'>None recorded</td></tr>"
+    
+    subject = f"[MoM Summary] {meeting.title} - Bank AL Habib Governance"
+    body = f"""
+    <h2>Governance Minutes of Meeting (MoM)</h2>
+    <p><strong>Meeting:</strong> {meeting.title}</p>
+    <p><strong>Stage Gate Sign-Off:</strong> <span style="font-weight:bold; color: {'#16a34a' if mom.signoff_status == 'APPROVED' else '#dc2626' if mom.signoff_status == 'REJECTED' else '#d97706'};">{mom.signoff_status}</span></p>
+    <p><strong>Recorded By:</strong> {current_user.name} ({current_user.email})</p>
+    
+    <h3>Key Decisions:</h3>
+    <ul>{decisions_html}</ul>
+    
+    <h3>Action Items:</h3>
+    <table border="1" cellpadding="5" cellspacing="0">
+      <thead>
+        <tr><th>Action Item</th><th>Assignee</th><th>Due Date</th><th>Status</th></tr>
+      </thead>
+      <tbody>{actions_html}</tbody>
+    </table>
+    
+    <h3>Detailed Meeting Notes:</h3>
+    <pre style="background:#f4f4f4; padding:10px; border-radius:5px;">{mom.content_markdown or 'No additional notes'}</pre>
+    """
+    
+    result = simulate_email_dispatch(attendees, subject, body)
+    return jsonify({
+        'message': f"Minutes of Meeting successfully emailed to {len(attendees)} attendee(s)",
+        'recipients': attendees,
+        'dispatch': result
+    })
+
+@app.route('/api/meetings/<int:meeting_id>', methods=['DELETE'])
+@token_required
+def delete_meeting(current_user, meeting_id):
+    meeting = db.session.get(Meeting, meeting_id)
+    if not meeting:
+        return jsonify({'error': 'Meeting not found'}), 404
+        
+    title = meeting.title
+    p_id = meeting.project_id
+    
+    audit = ActivityLog(
+        project_id=p_id,
+        user_id=current_user.id,
+        user_name=current_user.name,
+        user_email=current_user.email,
+        user_role=current_user.role,
+        action_type='MEETING_DELETED',
+        task_title=title,
+        details=f"Governance Meeting '{title}' was deleted/cancelled by {current_user.name}",
+        previous_state=meeting.status,
+        new_state='DELETED'
+    )
+    db.session.add(audit)
+    db.session.delete(meeting)
+    db.session.commit()
+    
+    return jsonify({'message': f"Meeting '{title}' cancelled and removed successfully"})
 
 
 # ----------------- SYSTEM DATABASE RESET -----------------

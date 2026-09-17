@@ -78,7 +78,10 @@ import TeamApprovalsView from './components/TeamApprovalsView';
 import AuditTrailView from './components/AuditTrailView';
 import ApiStudio from './components/ApiStudio';
 import BugTracker from './components/BugTracker';
+import MeetingsView from './components/MeetingsView';
+import MeetingRoom from './components/MeetingRoom';
 import Auth from './components/Auth';
+import UploadConfirmModal from './components/UploadConfirmModal';
 
 const API_BASE = 'http://127.0.0.1:5000/api';
 
@@ -117,8 +120,23 @@ export default function App() {
   const [capsLockOn, setCapsLockOn] = useState(false);
 
   // Active Workspace Tab Navigation
-  // Options: 'overview' | 'board' | 'planner' | 'stage_files' | 'bug_tracker' | 'api_studio' | 'team_approvals' | 'audit_trail'
+  // Options: 'overview' | 'board' | 'planner' | 'stage_files' | 'bug_tracker' | 'api_studio' | 'meetings' | 'team_approvals' | 'audit_trail'
   const [activeTab, setActiveTab] = useState('overview');
+  const [activeMeeting, setActiveMeeting] = useState(null);
+  const [directMeetRoomId, setDirectMeetRoomId] = useState(() => {
+    if (typeof window === 'undefined') return null;
+    const pathname = window.location.pathname;
+    if (pathname.startsWith('/meet/')) {
+      const room = pathname.replace(/^\/meet\/?/, '').trim();
+      return room || null;
+    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('meet')) {
+      return params.get('meet').trim();
+    }
+    return null;
+  });
+  const [directMeetingData, setDirectMeetingData] = useState(null);
 
   // Business State
   const [projects, setProjects] = useState([]);
@@ -214,6 +232,8 @@ export default function App() {
   const [stageFileSearch, setStageFileSearch] = useState('');
   const [isUploadingStageFile, setIsUploadingStageFile] = useState(false);
   const [newStageFolderName, setNewStageFolderName] = useState('');
+  const [pendingUpload, setPendingUpload] = useState(null);
+  const [isConfirmUploading, setIsConfirmUploading] = useState(false);
   const [showNewStageFolderModal, setShowNewStageFolderModal] = useState(false);
 
   // Task Files & Attachments State
@@ -255,6 +275,33 @@ export default function App() {
       fetchCurrentUser();
     }
   }, [token]);
+
+  // Handle Direct Meeting Navigation (/meet/:roomId or ?meet=:roomId)
+  useEffect(() => {
+    if (!directMeetRoomId) return;
+    const fetchDirectMeeting = async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/meetings/public/${directMeetRoomId}`);
+        setDirectMeetingData(res.data);
+        if (token && authUser) {
+          setActiveMeeting(res.data);
+        }
+      } catch (err) {
+        console.warn('Direct meeting public fetch fallback:', err);
+        const fallbackMeeting = {
+          room_name: directMeetRoomId,
+          title: 'Corporate Video Governance Meeting',
+          phase_name: 'Governance Review',
+          id: null
+        };
+        setDirectMeetingData(fallbackMeeting);
+        if (token && authUser) {
+          setActiveMeeting(fallbackMeeting);
+        }
+      }
+    };
+    fetchDirectMeeting();
+  }, [directMeetRoomId, token, authUser]);
 
   // Load project details once current project changes
   useEffect(() => {
@@ -394,6 +441,164 @@ export default function App() {
     } catch (err) {
       console.error("Failed to load task files:", err);
     }
+  };
+
+    const handleSelectStageFiles = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0 || !currentProject) return;
+
+    const stageName = activePhaseId === 'ALL'
+      ? 'All Stages Repository'
+      : (projectDetails?.phases?.find(p => p.id === activePhaseId)?.name || 'Stage Deliverables');
+    
+    const folderPath = stageBreadcrumbs.map(b => b.name).join(' / ');
+    const totalSize = files.reduce((acc, f) => acc + f.size, 0);
+
+    setPendingUpload({
+      isOpen: true,
+      type: 'stage_files',
+      files: files,
+      targetProject: currentProject.name,
+      targetStage: stageName,
+      targetFolder: folderPath,
+      totalSize: totalSize,
+      rawInput: e.target
+    });
+  };
+
+  const handleSelectStageFolder = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0 || !currentProject) return;
+
+    const rootFolder = files[0]?.webkitRelativePath?.split('/')[0] || 'Uploaded Folder';
+    const stageName = activePhaseId === 'ALL'
+      ? 'All Stages Repository'
+      : (projectDetails?.phases?.find(p => p.id === activePhaseId)?.name || 'Stage Deliverables');
+    
+    const folderPath = stageBreadcrumbs.map(b => b.name).join(' / ');
+    const totalSize = files.reduce((acc, f) => acc + f.size, 0);
+
+    setPendingUpload({
+      isOpen: true,
+      type: 'stage_folder',
+      files: files,
+      folderName: rootFolder,
+      targetProject: currentProject.name,
+      targetStage: stageName,
+      targetFolder: folderPath,
+      totalSize: totalSize,
+      rawInput: e.target
+    });
+  };
+
+  const handleSelectTaskFiles = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0 || !selectedTask) return;
+
+    const stageName = projectDetails?.phases?.find(p => p.id === selectedTask.phase_id)?.name || 'General Stage';
+    const folderPath = taskBreadcrumbs.map(b => b.name).join(' / ');
+    const totalSize = files.reduce((acc, f) => acc + f.size, 0);
+
+    setPendingUpload({
+      isOpen: true,
+      type: 'task_files',
+      files: files,
+      targetProject: currentProject?.name || 'Current Project',
+      targetStage: stageName,
+      targetTask: selectedTask.title,
+      targetFolder: folderPath,
+      totalSize: totalSize,
+      rawInput: e.target
+    });
+  };
+
+  const handleConfirmUpload = async (customFiles) => {
+    const filesToUpload = customFiles || pendingUpload?.files || [];
+    if (!pendingUpload || filesToUpload.length === 0) return;
+    setIsConfirmUploading(true);
+
+    try {
+      if (pendingUpload.type === 'stage_files') {
+        for (let i = 0; i < filesToUpload.length; i++) {
+          const file = filesToUpload[i];
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('project_id', currentProject.id);
+          if (activePhaseId && activePhaseId !== 'ALL') {
+            formData.append('phase_id', activePhaseId);
+          }
+          if (stageParentFolderId) {
+            formData.append('parent_id', stageParentFolderId);
+          }
+          await axios.post(`${API_BASE}/files/upload`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+        }
+        showSuccess(`Uploaded ${filesToUpload.length} deliverable(s) successfully!`);
+        fetchStageFiles(currentProject.id, activePhaseId, stageParentFolderId);
+        fetchProjectDetails(currentProject.id);
+      } else if (pendingUpload.type === 'stage_folder') {
+        // 1. Create root folder on backend
+        const folderRes = await axios.post(`${API_BASE}/files/folder`, {
+          name: pendingUpload.folderName,
+          project_id: currentProject.id,
+          phase_id: activePhaseId !== 'ALL' ? activePhaseId : null,
+          parent_id: stageParentFolderId
+        });
+        const newFolderId = folderRes.data.id;
+
+        // 2. Upload all files into this folder
+        for (let i = 0; i < filesToUpload.length; i++) {
+          const file = filesToUpload[i];
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('project_id', currentProject.id);
+          if (activePhaseId && activePhaseId !== 'ALL') {
+            formData.append('phase_id', activePhaseId);
+          }
+          formData.append('parent_id', newFolderId);
+          await axios.post(`${API_BASE}/files/upload`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+        }
+        showSuccess(`Folder "${pendingUpload.folderName}" with ${filesToUpload.length} file(s) uploaded successfully!`);
+        fetchStageFiles(currentProject.id, activePhaseId, stageParentFolderId);
+        fetchProjectDetails(currentProject.id);
+      } else if (pendingUpload.type === 'task_files') {
+        for (let i = 0; i < filesToUpload.length; i++) {
+          const file = filesToUpload[i];
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('project_id', currentProject.id);
+          formData.append('task_id', selectedTask.id);
+          if (taskParentFolderId) {
+            formData.append('parent_id', taskParentFolderId);
+          }
+          await axios.post(`${API_BASE}/files/upload`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+        }
+        showSuccess(`Uploaded ${filesToUpload.length} task attachment(s) successfully!`);
+        fetchTaskFiles(selectedTask.id, taskParentFolderId);
+        fetchProjectDetails(currentProject.id);
+      }
+
+      if (pendingUpload.rawInput) {
+        pendingUpload.rawInput.value = '';
+      }
+      setPendingUpload(null);
+    } catch (err) {
+      showError(err);
+    } finally {
+      setIsConfirmUploading(false);
+    }
+  };
+
+  const handleCancelUpload = () => {
+    if (pendingUpload?.rawInput) {
+      pendingUpload.rawInput.value = '';
+    }
+    setPendingUpload(null);
   };
 
   const handleUploadStageFile = async (e) => {
@@ -1210,8 +1415,18 @@ export default function App() {
     }
   };
 
-  const handleShiftTask = async (task, direction) => {
+  const handleShiftTask = async (taskOrId, targetStatusOrDirection) => {
     if (!projectDetails || !currentProject) return;
+    
+    // Resolve task object from ID or object
+    const task = typeof taskOrId === 'object' && taskOrId !== null
+      ? taskOrId
+      : (projectDetails.tasks || []).find(t => t.id === taskOrId);
+
+    if (!task) {
+      console.warn("Task not found for status shift:", taskOrId);
+      return;
+    }
     
     if (!canEditTaskItem(task)) {
       showError("Forbidden: You have view-only access to stages outside your department.");
@@ -1219,18 +1434,29 @@ export default function App() {
     }
     
     const statuses = ['Planned', 'In Progress', 'Completed'];
-    const currentStatus = task.status === 'To Do' ? 'Planned' : (task.status || 'Planned');
+    const currentStatus = (task.status === 'To Do' || task.status === 'Todo' || task.status === 'Backlog')
+      ? 'Planned'
+      : (task.status || 'Planned');
     const currentIdx = statuses.indexOf(currentStatus);
-    if (currentIdx === -1) return;
     
-    let targetIdx = direction === 'right' ? currentIdx + 1 : currentIdx - 1;
-    if (targetIdx < 0 || targetIdx >= statuses.length) return;
+    let targetStatus = targetStatusOrDirection;
+    if (targetStatusOrDirection === 'left') {
+      targetStatus = currentIdx > 0 ? statuses[currentIdx - 1] : statuses[0];
+    } else if (targetStatusOrDirection === 'right') {
+      targetStatus = currentIdx < statuses.length - 1 ? statuses[currentIdx + 1] : statuses[statuses.length - 1];
+    }
     
-    const targetStatus = statuses[targetIdx];
+    if (!statuses.includes(targetStatus)) {
+      console.warn("Invalid target status:", targetStatus);
+      return;
+    }
+    if (targetStatus === currentStatus) return;
+    
     try {
       await axios.put(`${API_BASE}/projects/${currentProject.id}/tasks/${task.id}`, {
         status: targetStatus
       });
+      showSuccess(`Task moved to "${targetStatus}".`);
       fetchProjectDetails(currentProject.id);
       fetchProjectActivities(currentProject.id);
     } catch (err) {
@@ -1435,6 +1661,31 @@ export default function App() {
     b => b.status !== 'CLOSED' && b.status !== 'VERIFIED'
   ).length;
 
+  // RENDER GUEST MEETING ROOM IF DIRECT MEETING URL ACCESSED WITHOUT AUTHENTICATION
+  if (directMeetRoomId && (!token || !authUser)) {
+    return (
+      <div className={`h-screen w-screen p-2 sm:p-4 overflow-hidden flex flex-col ${
+        isDarkMode ? 'bg-[#090a12] text-zinc-100' : 'bg-[#f8fafc] text-slate-900'
+      }`}>
+        <MeetingRoom
+          meeting={directMeetingData || {
+            room_name: directMeetRoomId,
+            title: 'Corporate Video Governance Meeting',
+            phase_name: 'Governance Review'
+          }}
+          isGuest={true}
+          onLeave={() => {
+            window.location.href = '/';
+          }}
+          isDarkMode={isDarkMode}
+          API_BASE={API_BASE}
+          showSuccess={showSuccess}
+          showError={showError}
+        />
+      </div>
+    );
+  }
+
   // RENDER AUTHENTICATION VIEW IF NOT SIGNED IN
   if (!token || !authUser) {
     return (
@@ -1524,8 +1775,28 @@ export default function App() {
 
       {/* Main Workspace Area (Scrollable flex-1) */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          {/* TAB 1: OVERVIEW & METRICS (DEFAULT LANDING VIEW) */}
+        {activeMeeting ? (
+          <div className="flex-1 p-2 sm:p-4 h-full overflow-hidden">
+            <MeetingRoom
+              meeting={activeMeeting}
+              onLeave={() => {
+                setActiveMeeting(null);
+                setDirectMeetRoomId(null);
+                if (typeof window !== 'undefined' && window.history && window.history.pushState) {
+                  window.history.pushState({}, '', '/');
+                }
+              }}
+              currentProject={currentProject}
+              isDarkMode={isDarkMode}
+              authUser={authUser}
+              API_BASE={API_BASE}
+              showSuccess={showSuccess}
+              showError={showError}
+            />
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+            {/* TAB 1: OVERVIEW & METRICS (DEFAULT LANDING VIEW) */}
           {activeTab === 'overview' && (
             <OverviewMetrics
               currentProject={currentProject}
@@ -1594,7 +1865,8 @@ export default function App() {
               onNavigateBreadcrumb={handleNavigateStageBreadcrumb}
               stageFileSearch={stageFileSearch}
               setStageFileSearch={setStageFileSearch}
-              onUploadFile={handleUploadStageFile}
+              onUploadFile={handleSelectStageFiles}
+              onUploadFolder={handleSelectStageFolder}
               onDownloadFile={handleDownloadFile}
               onDeleteFile={handleDeleteStageFile}
               onOpenNewFolderModal={() => setShowNewStageFolderModal(true)}
@@ -1631,7 +1903,23 @@ export default function App() {
             />
           )}
 
-          {/* TAB 7: TEAM DIRECTORY & ACCOUNT APPROVALS */}
+          {/* TAB 7: CORPORATE MEETINGS & MoM */}
+          {activeTab === 'meetings' && (
+            <MeetingsView
+              currentProject={currentProject}
+              projectDetails={projectDetails}
+              activePhaseId={activePhaseId}
+              setActivePhaseId={setActivePhaseId}
+              isDarkMode={isDarkMode}
+              authUser={authUser}
+              API_BASE={API_BASE}
+              showSuccess={showSuccess}
+              showError={showError}
+              onJoinMeeting={(meeting) => setActiveMeeting(meeting)}
+            />
+          )}
+
+          {/* TAB 8: TEAM DIRECTORY & ACCOUNT APPROVALS */}
           {activeTab === 'team_approvals' && (
             <TeamApprovalsView
               allUsers={allUsers}
@@ -1681,6 +1969,7 @@ export default function App() {
             />
           )}
         </div>
+        )}
       </main>
 
       {/* ========================================================================= */}
@@ -1968,7 +2257,7 @@ export default function App() {
                             type="file"
                             multiple
                             disabled={isUploadingTaskFile}
-                            onChange={handleUploadTaskFile}
+                            onChange={handleSelectTaskFiles}
                             className="hidden"
                           />
                         </label>
@@ -2955,6 +3244,18 @@ export default function App() {
           </div>
         </div>
       )}
+
+            {/* 8. UPLOAD CONFIRMATION MODAL */}
+      <UploadConfirmModal
+        isOpen={Boolean(pendingUpload?.isOpen)}
+        onClose={handleCancelUpload}
+        onConfirm={handleConfirmUpload}
+        uploadData={pendingUpload}
+        isUploading={isConfirmUploading}
+        isDarkMode={isDarkMode}
+        formatFileSize={formatFileSize}
+        getFileIcon={getFileIcon}
+      />
 
       {/* 7. NEW STAGE FOLDER MODAL */}
       {showNewStageFolderModal && (

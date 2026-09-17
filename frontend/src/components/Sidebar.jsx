@@ -16,7 +16,8 @@ import {
   User,
   Plus,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Video
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -86,6 +87,12 @@ export default function Sidebar({
       id: 'api_studio',
       label: 'API Studio',
       icon: Terminal,
+      badge: null
+    },
+    {
+      id: 'meetings',
+      label: 'Meetings & MoM',
+      icon: Video,
       badge: null
     },
     {

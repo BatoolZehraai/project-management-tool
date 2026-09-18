@@ -43,6 +43,13 @@ import {
 } from 'lucide-react';
 import bahlLogo from '../assets/bahl-logo.png';
 import SnippetDrawer from './SnippetDrawer';
+import {
+  extractJsonPath,
+  interpolate,
+  BUILTIN_DYNAMIC_GENERATORS,
+  executeSingleStep,
+  generateCurlCommand
+} from '../utils/apiExecutionEngine';
 
 const METHOD_COLORS = {
   GET: {
@@ -134,25 +141,8 @@ const BUILTIN_NAMES = new Set([
   'Local (Development)', 'Development (Sandbox)', 'Staging (UAT)', 'Staging (UAT Cluster)', 'Production (Live)'
 ]);
 
-// Helper to extract nested value from JSON object by path
-function extractJsonPath(obj, path) {
-  if (!obj || !path) return undefined;
-  const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean);
-  let current = obj;
-  for (const part of parts) {
-    if (current === null || current === undefined) return undefined;
-    current = current[part];
-  }
-  return current;
-}
-
-// Helper to replace {{varName}} in string
-function interpolateVariables(str, varMap) {
-  if (typeof str !== 'string') return str;
-  return str.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (match, key) => {
-    return varMap[key] !== undefined ? String(varMap[key]) : match;
-  });
-}
+// Alias for backwards-compatibility within the component
+const interpolateVariables = (str, varMap) => interpolate(str, varMap);
 
 export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject, projects, onSelectProject }) {
   // Current active project binding
@@ -185,6 +175,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
   // Active step editor state
   const [activeTab, setActiveTab] = useState('body'); // 'body' | 'headers' | 'params' | 'extraction'
   const [responseTab, setResponseTab] = useState('body'); // 'body' | 'headers' | 'extracted'
+  const [mobileView, setMobileView] = useState('request'); // 'steps' | 'request' | 'response'
 
   // Per-step execution state map
   const [stepExecutions, setStepExecutions] = useState({});
@@ -238,7 +229,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
     try {
       setIsLoadingEnvs(true);
       const token = localStorage.getItem('authToken');
-      const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-environments`, {
+      const res = await fetch(`/api/projects/${projectId}/api-environments`, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
       if (res.ok) {
@@ -272,7 +263,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
     try {
       setIsLoadingPipeline(true);
       const token = localStorage.getItem('authToken');
-      const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-pipeline`, {
+      const res = await fetch(`/api/projects/${projectId}/api-pipeline`, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
       if (res.ok) {
@@ -334,7 +325,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
       setIsSavingPipeline(true);
       setPipelineSaveStatus(null);
       const token = localStorage.getItem('authToken');
-      const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-pipeline`, {
+      const res = await fetch(`/api/projects/${projectId}/api-pipeline`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -362,7 +353,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
     try {
       setIsLoadingPipeline(true);
       const token = localStorage.getItem('authToken');
-      const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-pipeline/reset`, {
+      const res = await fetch(`/api/projects/${projectId}/api-pipeline/reset`, {
         method: 'POST',
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
@@ -422,7 +413,6 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
 
   // Execute a single step with provided context variables
   const executeStep = async (step, contextVars) => {
-    const startTime = performance.now();
     const stepId = step.id;
 
     // Set step as executing
@@ -431,130 +421,19 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
       [stepId]: { ...(prev[stepId] || {}), isExecuting: true, isError: false }
     }));
 
-    try {
-      // 1. Interpolate URL
-      let targetUrl = interpolateVariables(step.url, contextVars);
+    const outcome = await executeSingleStep(step, contextVars, {});
 
-      // 2. Query Params
-      if (Array.isArray(step.params) && step.params.length > 0) {
-        const enabledParams = step.params.filter(p => p.enabled && p.key);
-        if (enabledParams.length > 0) {
-          const urlObj = new URL(targetUrl.startsWith('http') ? targetUrl : `http://127.0.0.1:5000${targetUrl.startsWith('/') ? '' : '/'}${targetUrl}`);
-          enabledParams.forEach(p => {
-            urlObj.searchParams.set(interpolateVariables(p.key, contextVars), interpolateVariables(p.value, contextVars));
-          });
-          targetUrl = urlObj.toString();
-        }
-      }
+    setStepExecutions(prev => ({
+      ...prev,
+      [stepId]: outcome.result
+    }));
 
-      // 3. Interpolate Headers
-      const requestHeaders = {};
-      if (Array.isArray(step.headers)) {
-        step.headers.filter(h => h.enabled && h.key).forEach(h => {
-          requestHeaders[interpolateVariables(h.key, contextVars)] = interpolateVariables(h.value, contextVars);
-        });
-      }
-
-      // 4. Interpolate Body
-      let requestBody = null;
-      if (['POST', 'PUT', 'PATCH'].includes(step.method) && step.body) {
-        requestBody = interpolateVariables(step.body, contextVars);
-      }
-
-      // 5. Execute HTTP Request
-      const fetchOptions = {
-        method: step.method,
-        headers: requestHeaders
-      };
-      if (requestBody && ['POST', 'PUT', 'PATCH'].includes(step.method)) {
-        fetchOptions.body = requestBody;
-      }
-
-      const res = await fetch(targetUrl, fetchOptions);
-      const endTime = performance.now();
-      const responseTime = Math.round(endTime - startTime);
-
-      // Extract response headers
-      const resHeaders = {};
-      res.headers.forEach((val, key) => {
-        resHeaders[key] = val;
-      });
-
-      // Parse payload
-      let responseData = null;
-      let rawText = '';
-      try {
-        rawText = await res.text();
-        responseData = JSON.parse(rawText);
-      } catch {
-        responseData = rawText;
-      }
-
-      const responseSize = rawText ? (new TextEncoder().encode(rawText).length / 1024).toFixed(2) : '0.00';
-
-      // 6. Execute Variable Extractions
-      const newlyExtracted = {};
-      if (Array.isArray(step.extractionRules) && step.extractionRules.length > 0 && typeof responseData === 'object') {
-        step.extractionRules.forEach(rule => {
-          if (rule.variableName && rule.jsonPath) {
-            const val = extractJsonPath(responseData, rule.jsonPath);
-            if (val !== undefined) {
-              newlyExtracted[rule.variableName] = typeof val === 'object' ? JSON.stringify(val) : val;
-            }
-          }
-        });
-      }
-
-      const execResult = {
-        isExecuting: false,
-        response: responseData,
-        responseStatus: res.status,
-        responseStatusText: res.statusText,
-        responseTime,
-        responseSize: `${responseSize} KB`,
-        responseHeaders: resHeaders,
-        isError: !res.ok,
-        extractedVariables: newlyExtracted,
-        lastExecutedAt: new Date().toISOString()
-      };
-
-      setStepExecutions(prev => ({
-        ...prev,
-        [stepId]: execResult
-      }));
-
-      // Update global runtime vars with extracted items
-      if (Object.keys(newlyExtracted).length > 0) {
-        setRuntimeVars(prev => ({ ...prev, ...newlyExtracted }));
-      }
-
-      return {
-        success: res.ok,
-        extracted: newlyExtracted,
-        result: execResult
-      };
-    } catch (err) {
-      const endTime = performance.now();
-      const errorResult = {
-        isExecuting: false,
-        response: { error: err.message || 'Network request failed' },
-        responseStatus: 0,
-        responseStatusText: 'Network Error',
-        responseTime: Math.round(endTime - startTime),
-        responseSize: '0.00 KB',
-        responseHeaders: {},
-        isError: true,
-        extractedVariables: {},
-        lastExecutedAt: new Date().toISOString()
-      };
-
-      setStepExecutions(prev => ({
-        ...prev,
-        [stepId]: errorResult
-      }));
-
-      return { success: false, extracted: {}, result: errorResult };
+    // Update global runtime vars with extracted items
+    if (outcome.extracted && Object.keys(outcome.extracted).length > 0) {
+      setRuntimeVars(prev => ({ ...prev, ...outcome.extracted }));
     }
+
+    return outcome;
   };
 
   // Run single active step
@@ -562,6 +441,15 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
     if (!activeStep) return;
     setViewingSavedResponse(false);
     await executeStep(activeStep, mergedVariables);
+  };
+
+  // Export current step as cURL snippet
+  const handleCopyCurl = () => {
+    if (!activeStep) return;
+    const curl = generateCurlCommand(activeStep, mergedVariables);
+    navigator.clipboard.writeText(curl);
+    setToastMessage('cURL command copied to clipboard!');
+    setTimeout(() => setToastMessage(null), 2500);
   };
 
   // Run full chained multi-step pipeline sequentially
@@ -582,6 +470,15 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
       const mergedForStep = { ...currentContext, ...accumulatedRuntime };
 
       const res = await executeStep(step, mergedForStep);
+
+      // Halt pipeline immediately if step failed
+      if (!res.success) {
+        setPipelineProgress({ current: i + 1, total: steps.length, status: 'failed' });
+        setIsPipelineRunning(false);
+        setToastMessage(`Pipeline halted: Step #${i + 1} (${step.name}) encountered an error.`);
+        setTimeout(() => setToastMessage(null), 3500);
+        return;
+      }
 
       // Merge newly extracted variables into subsequent step contexts
       if (res.extracted && Object.keys(res.extracted).length > 0) {
@@ -760,7 +657,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
       const token = localStorage.getItem('authToken');
       const isNew = !editingEnv.id;
 
-      const url = `http://127.0.0.1:5000/api/projects/${projectId}/api-environments${isNew ? '' : `/${editingEnv.id}`}`;
+      const url = `/api/projects/${projectId}/api-environments${isNew ? '' : `/${editingEnv.id}`}`;
       const method = isNew ? 'POST' : 'PUT';
 
       const res = await fetch(url, {
@@ -798,7 +695,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
     if (!window.confirm('Are you sure you want to delete this custom environment?')) return;
     try {
       const token = localStorage.getItem('authToken');
-      const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-environments/${envId}`, {
+      const res = await fetch(`/api/projects/${projectId}/api-environments/${envId}`, {
         method: 'DELETE',
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
@@ -817,36 +714,30 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
     <div className={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
       
       {/* ========================================================================= */}
-      {/* 1. CLEAN, STREAMLINED SINGLE-LINE TOOLBAR                                 */}
+      {/* 1. RESPONSIVE TOOLBAR HEADER                                              */}
       {/* ========================================================================= */}
-      <header className={`h-14 px-4 border-b flex items-center justify-between gap-3 sticky top-0 z-30 transition-colors ${
-        isDarkMode ? 'bg-slate-900/90 border-slate-800/80 backdrop-blur-md' : 'bg-white/95 border-slate-200/90 backdrop-blur-md shadow-sm'
+      <header className={`min-h-14 py-2 px-3 sm:px-4 border-b flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 sm:gap-3 sticky top-0 z-30 transition-colors ${
+        isDarkMode ? 'bg-slate-900/95 border-slate-800/80 backdrop-blur-md' : 'bg-white/95 border-slate-200/90 backdrop-blur-md shadow-sm'
       }`}>
         
         {/* Left: Navigation & Studio Title */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={onBack}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all shrink-0 ${
               isDarkMode 
                 ? 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white hover:border-slate-600' 
                 : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
             }`}
             title="Return to Kanban Board"
           >
-            <ArrowLeft size={16} />
-            {/* <span>Back to Board</span> */}
+            <ArrowLeft size={15} />
+            <span className="hidden sm:inline">Back</span>
           </button>
-
-          {/* <div className="h-4 w-px bg-slate-700/50" />
-
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm font-bold tracking-tight">API Execution Studio</h1>
-          </div> */}
         </div>
 
         {/* Center: Clean Project & Custom Environment Selectors */}
-        <div className="flex items-center gap-2.5 max-w-xl flex-1 justify-center">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1 justify-center max-w-xl">
           {/* Project Selector */}
           {projects && projects.length > 0 && onSelectProject && (
             <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs ${
@@ -857,7 +748,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                 id="api-project-select"
                 value={projectId}
                 onChange={(e) => onSelectProject(Number(e.target.value))}
-                className="bg-transparent border-none focus:outline-none text-xs font-semibold cursor-pointer max-w-[200px] truncate"
+                className="bg-transparent border-none focus:outline-none text-xs font-semibold cursor-pointer max-w-[130px] sm:max-w-[190px] truncate"
               >
                 {projects.map(p => (
                   <option key={p.id} value={p.id} className={isDarkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-slate-800'}>
@@ -873,14 +764,14 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
             <button
               id="api-environment-btn"
               onClick={() => setIsEnvDropdownOpen(!isEnvDropdownOpen)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
                 isDarkMode 
                   ? 'bg-slate-800/80 border-slate-700 text-slate-200 hover:bg-slate-800 hover:border-slate-600' 
                   : 'bg-slate-100 border-slate-200 text-slate-800 hover:bg-slate-200'
               }`}
             >
               <Globe size={14} className="text-emerald-400 shrink-0" />
-              <span className="max-w-[150px] truncate">{activeEnv?.name || 'Local Backend'}</span>
+              <span className="max-w-[110px] sm:max-w-[150px] truncate">{activeEnv?.name || 'Local Backend'}</span>
               <ChevronDown size={13} className={`text-slate-400 shrink-0 transition-transform ${isEnvDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
@@ -985,56 +876,61 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
         </div>
 
         {/* Right: Actions Toolbar */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Snippets Drawer Toggle Button */}
           <button
             onClick={() => setShowSnippetDrawer(true)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
               isDarkMode 
                 ? 'bg-purple-950/40 border-purple-800/60 text-purple-300 hover:bg-purple-900/60 hover:text-purple-100' 
                 : 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100'
             }`}
             title="Open Banking Payloads & Code Snippets Drawer"
           >
-            <BookOpen size={14} className="text-purple-400" />
-            <span>Snippets</span>
+            <BookOpen size={14} className="text-purple-400 shrink-0" />
+            <span className="hidden sm:inline">Snippets</span>
           </button>
 
           {/* Reset Pipeline */}
           <button
             onClick={handleResetPipeline}
             disabled={isLoadingPipeline || isPipelineRunning}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
               isDarkMode 
                 ? 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-800' 
                 : 'bg-slate-100 border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-200'
             }`}
             title="Reset to default pipeline template"
           >
-            <RotateCcw size={14} className={isLoadingPipeline ? 'animate-spin' : ''} />
-            <span>Reset</span>
+            <RotateCcw size={14} className={`shrink-0 ${isLoadingPipeline ? 'animate-spin' : ''}`} />
+            <span className="hidden md:inline">Reset</span>
           </button>
 
           {/* Save Pipeline */}
           <button
             onClick={() => handleSavePipeline()}
             disabled={isSavingPipeline || isPipelineRunning}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
               isDarkMode 
                 ? 'bg-slate-800/80 border-slate-700 text-slate-200 hover:bg-slate-800' 
                 : 'bg-slate-100 border-slate-200 text-slate-800 hover:bg-slate-200'
             }`}
             title="Save Pipeline configuration"
           >
-            <Save size={14} className={isSavingPipeline ? 'animate-spin' : 'text-purple-400'} />
-            <span>Save Pipeline</span>
+            <Save size={14} className={`shrink-0 ${isSavingPipeline ? 'animate-spin' : 'text-purple-400'}`} />
+            <span className="hidden sm:inline">Save Pipeline</span>
           </button>
 
           {/* Run Chained Pipeline Button */}
           <button
-            onClick={handleRunChainedPipeline}
+            onClick={async () => {
+              await handleRunChainedPipeline();
+              if (window.innerWidth < 1024) {
+                setMobileView('response');
+              }
+            }}
             disabled={isPipelineRunning || steps.length === 0}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold text-white shadow-md transition-all active:scale-95 ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold text-white shadow-md transition-all active:scale-95 shrink-0 ${
               isPipelineRunning
                 ? 'bg-purple-800 cursor-not-allowed opacity-80'
                 : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-600/25'
@@ -1042,13 +938,13 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
           >
             {isPipelineRunning ? (
               <>
-                <RefreshCw size={14} className="animate-spin" />
-                <span>Running ({pipelineProgress.current}/{pipelineProgress.total})...</span>
+                <RefreshCw size={14} className="animate-spin shrink-0" />
+                <span>Running ({pipelineProgress.current}/{pipelineProgress.total})</span>
               </>
             ) : (
               <>
-                <Play size={14} className="fill-white" />
-                <span>Run Chained Pipeline</span>
+                <Play size={14} className="fill-white shrink-0" />
+                <span><span className="hidden md:inline">Run Chained </span>Pipeline</span>
               </>
             )}
           </button>
@@ -1075,6 +971,54 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
         </div>
       )}
 
+      {/* Responsive Mobile / Tablet Tab Selector (only visible on < lg screens) */}
+      <div className={`lg:hidden px-3 py-2 border-b flex items-center justify-between gap-1 shrink-0 ${
+        isDarkMode ? 'bg-slate-900/80 border-slate-800' : 'bg-slate-100 border-slate-200'
+      }`}>
+        <div className="grid grid-cols-3 gap-1.5 w-full max-w-md mx-auto">
+          <button
+            type="button"
+            onClick={() => setMobileView('steps')}
+            className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              mobileView === 'steps'
+                ? isDarkMode ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-700 shadow-sm'
+                : isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Layers size={13} />
+            <span>Phases ({steps.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMobileView('request')}
+            className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              mobileView === 'request'
+                ? isDarkMode ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-700 shadow-sm'
+                : isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Code2 size={13} />
+            <span>Phase #{activeStepIndex + 1}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMobileView('response')}
+            className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              mobileView === 'response'
+                ? isDarkMode ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-700 shadow-sm'
+                : isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Terminal size={13} />
+            <span>
+              Response {activeStepExec.responseStatus ? `(${activeStepExec.responseStatus})` : ''}
+            </span>
+          </button>
+        </div>
+      </div>
+
       {/* ========================================================================= */}
       {/* 2. MAIN STUDIO 3-COLUMN WORKSPACE                                         */}
       {/* ========================================================================= */}
@@ -1084,6 +1028,8 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
         {/* LEFT COLUMN: Pipeline Steps List (3 cols)  */}
         {/* ========================================== */}
         <div className={`lg:col-span-3 border-r flex flex-col overflow-y-auto ${
+          mobileView === 'steps' ? 'flex' : 'hidden lg:flex'
+        } ${
           isDarkMode ? 'bg-slate-900/30 border-slate-800/80' : 'bg-slate-50/50 border-slate-200'
         }`}>
           {/* Section Header */}
@@ -1130,6 +1076,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                     onClick={() => {
                       setActiveStepIndex(idx);
                       setViewingSavedResponse(false);
+                      setMobileView('request');
                     }}
                     className={`p-3 rounded-xl border transition-all cursor-pointer group ${
                       isSelected
@@ -1286,7 +1233,9 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
         {/* CENTER COLUMN: Request Editor & Config (5 cols)     */}
         {/* ==================================================== */}
         {activeStep ? (
-          <div className="lg:col-span-5 flex flex-col border-r border-slate-800/80 overflow-y-auto">
+          <div className={`lg:col-span-5 flex flex-col border-r border-slate-800/80 overflow-y-auto ${
+            mobileView === 'request' ? 'flex' : 'hidden lg:flex'
+          }`}>
             {/* Step Header Bar */}
             <div className={`p-3 border-b flex items-center justify-between gap-2 ${
               isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-50 border-slate-200'
@@ -1313,11 +1262,11 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
             </div>
 
             {/* URL Input Bar */}
-            <div className="p-3 border-b border-slate-800/80 flex items-center gap-2">
+            <div className="p-2.5 sm:p-3 border-b border-slate-800/80 flex flex-wrap sm:flex-nowrap items-center gap-2">
               <select
                 value={activeStep.method}
                 onChange={(e) => handleUpdateActiveStep({ method: e.target.value })}
-                className={`text-xs font-bold px-2.5 py-2 rounded-lg border focus:outline-none ${METHOD_COLORS[activeStep.method]?.bg}`}
+                className={`text-xs font-bold px-2.5 py-2 rounded-lg border focus:outline-none shrink-0 ${METHOD_COLORS[activeStep.method]?.bg}`}
               >
                 {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => (
                   <option key={m} value={m} className={isDarkMode ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'}>
@@ -1326,7 +1275,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                 ))}
               </select>
 
-              <div className="flex-1 relative">
+              <div className="flex-1 min-w-[140px] relative">
                 <input
                   type="text"
                   value={activeStep.url}
@@ -1340,27 +1289,49 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                 />
               </div>
 
-              {/* Single Step Send Button */}
-              <button
-                onClick={handleRunActiveStep}
-                disabled={activeStepExec.isExecuting || isPipelineRunning}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold text-white transition-all shadow-sm ${
-                  activeStepExec.isExecuting
-                    ? 'bg-purple-800 opacity-80'
-                    : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/20 active:scale-95'
-                }`}
-              >
-                {activeStepExec.isExecuting ? (
-                  <RefreshCw size={13} className="animate-spin" />
-                ) : (
-                  <Play size={13} className="fill-white" />
-                )}
-                <span>Send</span>
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {/* Copy as cURL Button */}
+                <button
+                  type="button"
+                  onClick={handleCopyCurl}
+                  className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${
+                    isDarkMode
+                      ? 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'
+                      : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
+                  }`}
+                  title="Copy request as cURL command"
+                >
+                  <Terminal size={13} className="text-purple-400" />
+                  <span>cURL</span>
+                </button>
+
+                {/* Single Step Send Button */}
+                <button
+                  onClick={async () => {
+                    await handleRunActiveStep();
+                    if (window.innerWidth < 1024) {
+                      setMobileView('response');
+                    }
+                  }}
+                  disabled={activeStepExec.isExecuting || isPipelineRunning}
+                  className={`flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-bold text-white transition-all shadow-sm ${
+                    activeStepExec.isExecuting
+                      ? 'bg-purple-800 opacity-80'
+                      : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/20 active:scale-95'
+                  }`}
+                >
+                  {activeStepExec.isExecuting ? (
+                    <RefreshCw size={13} className="animate-spin" />
+                  ) : (
+                    <Play size={13} className="fill-white" />
+                  )}
+                  <span>Send</span>
+                </button>
+              </div>
             </div>
 
             {/* Config Tabs: Body | Headers | Params | Variable Extraction */}
-            <div className={`flex items-center gap-1 px-3 border-b text-xs font-semibold ${
+            <div className={`flex items-center gap-1 px-2 sm:px-3 border-b text-xs font-semibold overflow-x-auto whitespace-nowrap ${
               isDarkMode ? 'border-slate-800 bg-slate-900/30' : 'border-slate-200 bg-slate-100/50'
             }`}>
               {[
@@ -1372,7 +1343,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-3 py-2.5 border-b-2 transition-all ${
+                  className={`px-3 py-2.5 border-b-2 transition-all shrink-0 ${
                     activeTab === tab.id
                       ? 'border-purple-500 text-purple-400 font-bold'
                       : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -1434,7 +1405,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                   </div>
 
                   {(activeStep.headers || []).map((h, hIdx) => (
-                    <div key={h.id || hIdx} className="flex items-center gap-2">
+                    <div key={h.id || hIdx} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
                       <input
                         type="checkbox"
                         checked={h.enabled}
@@ -1443,7 +1414,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                           updated[hIdx].enabled = e.target.checked;
                           handleUpdateActiveStep({ headers: updated });
                         }}
-                        className="rounded border-slate-700 text-purple-600 focus:ring-purple-500"
+                        className="rounded border-slate-700 text-purple-600 focus:ring-purple-500 shrink-0"
                       />
                       <input
                         type="text"
@@ -1454,7 +1425,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                           updated[hIdx].key = e.target.value;
                           handleUpdateActiveStep({ headers: updated });
                         }}
-                        className={`flex-1 text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                        className={`flex-1 min-w-[120px] text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
                           isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
                         }`}
                       />
@@ -1467,7 +1438,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                           updated[hIdx].value = e.target.value;
                           handleUpdateActiveStep({ headers: updated });
                         }}
-                        className={`flex-1 text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                        className={`flex-1 min-w-[120px] text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
                           isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
                         }`}
                       />
@@ -1476,7 +1447,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                           const updated = activeStep.headers.filter((_, idx) => idx !== hIdx);
                           handleUpdateActiveStep({ headers: updated });
                         }}
-                        className="p-1 rounded text-slate-500 hover:text-rose-400"
+                        className="p-1 rounded text-slate-500 hover:text-rose-400 shrink-0"
                       >
                         <Trash2 size={13} />
                       </button>
@@ -1506,7 +1477,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                     <div className="text-xs text-slate-500 italic py-4 text-center">No query parameters defined.</div>
                   ) : (
                     activeStep.params.map((p, pIdx) => (
-                      <div key={p.id || pIdx} className="flex items-center gap-2">
+                      <div key={p.id || pIdx} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
                         <input
                           type="checkbox"
                           checked={p.enabled}
@@ -1515,7 +1486,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                             updated[pIdx].enabled = e.target.checked;
                             handleUpdateActiveStep({ params: updated });
                           }}
-                          className="rounded border-slate-700 text-purple-600 focus:ring-purple-500"
+                          className="rounded border-slate-700 text-purple-600 focus:ring-purple-500 shrink-0"
                         />
                         <input
                           type="text"
@@ -1526,7 +1497,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                             updated[pIdx].key = e.target.value;
                             handleUpdateActiveStep({ params: updated });
                           }}
-                          className={`flex-1 text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                          className={`flex-1 min-w-[120px] text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
                             isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
                           }`}
                         />
@@ -1539,7 +1510,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                             updated[pIdx].value = e.target.value;
                             handleUpdateActiveStep({ params: updated });
                           }}
-                          className={`flex-1 text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                          className={`flex-1 min-w-[120px] text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
                             isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
                           }`}
                         />
@@ -1548,7 +1519,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                             const updated = activeStep.params.filter((_, idx) => idx !== pIdx);
                             handleUpdateActiveStep({ params: updated });
                           }}
-                          className="p-1 rounded text-slate-500 hover:text-rose-400"
+                          className="p-1 rounded text-slate-500 hover:text-rose-400 shrink-0"
                         >
                           <Trash2 size={13} />
                         </button>
@@ -1593,8 +1564,8 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                       <div key={rule.id || rIdx} className={`p-3 rounded-xl border flex flex-col gap-2 ${
                         isDarkMode ? 'bg-slate-900/80 border-slate-800' : 'bg-slate-50 border-slate-200'
                       }`}>
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1">
+                        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                          <div className="flex-1 min-w-[140px]">
                             <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
                               Variable Name
                             </label>
@@ -1613,7 +1584,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                             />
                           </div>
 
-                          <div className="flex-1">
+                          <div className="flex-1 min-w-[140px]">
                             <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
                               JSON Path / Key
                             </label>
@@ -1637,7 +1608,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                               const updated = activeStep.extractionRules.filter((_, idx) => idx !== rIdx);
                               handleUpdateActiveStep({ extractionRules: updated });
                             }}
-                            className="p-1.5 mt-4 rounded text-slate-500 hover:text-rose-400"
+                            className="p-1.5 sm:mt-4 rounded text-slate-500 hover:text-rose-400 shrink-0"
                             title="Delete rule"
                           >
                             <Trash2 size={14} />
@@ -1651,7 +1622,9 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
             </div>
           </div>
         ) : (
-          <div className="lg:col-span-5 flex items-center justify-center p-8 text-slate-500 text-xs">
+          <div className={`lg:col-span-5 flex items-center justify-center p-8 text-slate-500 text-xs ${
+            mobileView === 'request' ? 'flex' : 'hidden lg:flex'
+          }`}>
             Select or create a step to configure
           </div>
         )}
@@ -1660,6 +1633,8 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
         {/* RIGHT COLUMN: Response, Metrics & Saved (4 cols)    */}
         {/* ==================================================== */}
         <div className={`lg:col-span-4 flex flex-col overflow-y-auto ${
+          mobileView === 'response' ? 'flex' : 'hidden lg:flex'
+        } ${
           isDarkMode ? 'bg-slate-950 text-slate-200' : 'bg-white text-slate-800'
         }`}>
           {/* Header Bar */}
@@ -1878,8 +1853,8 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
       {/* 3. CUSTOM ENVIRONMENT MANAGEMENT MODAL                                    */}
       {/* ========================================================================= */}
       {showEnvModal && editingEnv && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-          <div className={`w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden flex flex-col ${
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className={`w-[calc(100%-1rem)] max-w-lg rounded-2xl border shadow-2xl overflow-hidden flex flex-col ${
             isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
           }`}>
             {/* Modal Header */}
@@ -1904,7 +1879,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
             </div>
 
             {/* Modal Form */}
-            <div className="p-5 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
+            <div className="p-4 sm:p-5 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
               <div>
                 <label className="text-xs font-bold text-slate-300 block mb-1">
                   Environment Name
@@ -1940,7 +1915,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
 
                 <div className="flex flex-col gap-2">
                   {Object.entries(editingEnv.variables || {}).map(([key, val], vIdx) => (
-                    <div key={vIdx} className="flex items-center gap-2">
+                    <div key={vIdx} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
                       <input
                         type="text"
                         placeholder="Variable Key (e.g. baseUrl)"
@@ -1957,7 +1932,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                           });
                           setEditingEnv({ ...editingEnv, variables: newVars });
                         }}
-                        className={`w-1/3 text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                        className={`w-full sm:w-1/3 text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
                           isDarkMode ? 'bg-slate-950 border-slate-700 text-purple-300 font-bold' : 'bg-white border-slate-300 text-purple-800 font-bold'
                         }`}
                       />
@@ -1971,7 +1946,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                             variables: { ...editingEnv.variables, [key]: e.target.value }
                           });
                         }}
-                        className={`flex-1 text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                        className={`flex-1 min-w-[120px] text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
                           isDarkMode ? 'bg-slate-950 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                         }`}
                       />
@@ -1981,7 +1956,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                           delete newVars[key];
                           setEditingEnv({ ...editingEnv, variables: newVars });
                         }}
-                        className="p-1 rounded text-slate-500 hover:text-rose-400"
+                        className="p-1 rounded text-slate-500 hover:text-rose-400 shrink-0"
                         title="Delete variable"
                       >
                         <Trash2 size={13} />

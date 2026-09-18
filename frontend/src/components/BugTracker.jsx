@@ -39,7 +39,7 @@ import {
   UserCheck
 } from 'lucide-react';
 
-const API_BASE = 'http://127.0.0.1:5000/api';
+const API_BASE = '/api';
 
 const SEVERITY_CONFIG = {
   CRITICAL: {

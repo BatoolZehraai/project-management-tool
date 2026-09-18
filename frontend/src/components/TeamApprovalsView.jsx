@@ -280,64 +280,66 @@ export default function TeamApprovalsView({
           </div>
         </div>
 
-        <table className="w-full text-left text-xs">
-          <thead className={`border-b ${isDarkMode ? 'bg-[#141626] border-zinc-800 text-zinc-400' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
-            <tr>
-              <th className="p-3.5 font-bold uppercase text-[10px]">Employee</th>
-              <th className="p-3.5 font-bold uppercase text-[10px]">Department</th>
-              <th className="p-3.5 font-bold uppercase text-[10px]">Role</th>
-              <th className="p-3.5 font-bold uppercase text-[10px]">Status</th>
-              <th className="p-3.5 font-bold uppercase text-[10px]">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-inherit">
-            {filteredUsers.map(u => (
-              <tr key={u.id} className={`hover:bg-zinc-800/30 ${isDarkMode ? 'text-zinc-200' : 'text-slate-800 hover:bg-slate-50'}`}>
-                <td className="p-3.5">
-                  <div className="font-bold">{u.name}</div>
-                  <div className="text-[10.5px] font-mono text-zinc-400">{u.email}</div>
-                </td>
-                <td className="p-3.5 font-medium">{u.department}</td>
-                <td className="p-3.5">
-                  <span className="px-2 py-0.5 rounded font-mono text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                    {u.role}
-                  </span>
-                </td>
-                <td className="p-3.5">
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                      u.status === 'APPROVED'
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                    }`}
-                  >
-                    {u.status}
-                  </span>
-                </td>
-                <td className="p-3.5">
-                  <div className="flex items-center space-x-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenEditModal(u)}
-                      className="p-1.5 rounded-lg border border-transparent hover:border-purple-500/40 text-zinc-400 hover:text-purple-400 hover:bg-purple-950/20 transition cursor-pointer"
-                      title={`Edit user ${u.name}`}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDeleteUser(u.id, u.name)}
-                      className="p-1.5 rounded-lg border border-transparent hover:border-rose-500/40 text-zinc-400 hover:text-rose-400 hover:bg-rose-950/20 transition cursor-pointer"
-                      title={`Delete user ${u.name}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs min-w-[550px]">
+            <thead className={`border-b ${isDarkMode ? 'bg-[#141626] border-zinc-800 text-zinc-400' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+              <tr>
+                <th className="p-3.5 font-bold uppercase text-[10px]">Employee</th>
+                <th className="p-3.5 font-bold uppercase text-[10px]">Department</th>
+                <th className="p-3.5 font-bold uppercase text-[10px]">Role</th>
+                <th className="p-3.5 font-bold uppercase text-[10px]">Status</th>
+                <th className="p-3.5 font-bold uppercase text-[10px]">Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-inherit">
+              {filteredUsers.map(u => (
+                <tr key={u.id} className={`hover:bg-zinc-800/30 ${isDarkMode ? 'text-zinc-200' : 'text-slate-800 hover:bg-slate-50'}`}>
+                  <td className="p-3.5">
+                    <div className="font-bold">{u.name}</div>
+                    <div className="text-[10.5px] font-mono text-zinc-400">{u.email}</div>
+                  </td>
+                  <td className="p-3.5 font-medium">{u.department}</td>
+                  <td className="p-3.5">
+                    <span className="px-2 py-0.5 rounded font-mono text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                      {u.role}
+                    </span>
+                  </td>
+                  <td className="p-3.5">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        u.status === 'APPROVED'
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      }`}
+                    >
+                      {u.status}
+                    </span>
+                  </td>
+                  <td className="p-3.5">
+                    <div className="flex items-center space-x-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditModal(u)}
+                        className="p-1.5 rounded-lg border border-transparent hover:border-purple-500/40 text-zinc-400 hover:text-purple-400 hover:bg-purple-950/20 transition cursor-pointer"
+                        title={`Edit user ${u.name}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteUser(u.id, u.name)}
+                        className="p-1.5 rounded-lg border border-transparent hover:border-rose-500/40 text-zinc-400 hover:text-rose-400 hover:bg-rose-950/20 transition cursor-pointer"
+                        title={`Delete user ${u.name}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* ========================================================================= */}

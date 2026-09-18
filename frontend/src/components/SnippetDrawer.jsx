@@ -204,7 +204,7 @@ export default function SnippetDrawer({
     try {
       setIsLoadingCustom(true);
       const token = localStorage.getItem('authToken');
-      const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-snippets`, {
+      const res = await fetch(`/api/projects/${projectId}/api-snippets`, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
       if (res.ok) {
@@ -242,7 +242,7 @@ export default function SnippetDrawer({
       setIsSavingCustom(true);
       setFormError(null);
       const token = localStorage.getItem('authToken');
-      const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-snippets`, {
+      const res = await fetch(`/api/projects/${projectId}/api-snippets`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -282,7 +282,7 @@ export default function SnippetDrawer({
     if (!window.confirm('Delete this custom snippet?')) return;
     try {
       const token = localStorage.getItem('authToken');
-      const res = await fetch(`http://127.0.0.1:5000/api/projects/${projectId}/api-snippets/${snippetId}`, {
+      const res = await fetch(`/api/projects/${projectId}/api-snippets/${snippetId}`, {
         method: 'DELETE',
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
@@ -336,36 +336,36 @@ export default function SnippetDrawer({
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-black/60 backdrop-blur-sm animate-fade-in flex justify-end">
       {/* Slide-over Drawer Panel */}
-      <div className={`w-full max-w-xl h-full flex flex-col shadow-2xl border-l transition-all ${
+      <div className={`w-full sm:w-[480px] md:w-[540px] max-w-full h-full flex flex-col shadow-2xl border-l transition-all ${
         isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
       }`}>
         
         {/* Drawer Header */}
-        <div className={`p-4 border-b flex items-center justify-between gap-3 ${
+        <div className={`p-3 sm:p-4 border-b flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-3 ${
           isDarkMode ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
         }`}>
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-purple-600/20 border border-purple-500/30 text-purple-400">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-2 rounded-xl bg-purple-600/20 border border-purple-500/30 text-purple-400 shrink-0">
               <BookOpen size={18} />
             </div>
-            <div>
-              <h2 className="text-sm font-bold tracking-tight flex items-center gap-2">
-                <span>Payload Templates & Snippets</span>
+            <div className="min-w-0">
+              <h2 className="text-xs sm:text-sm font-bold tracking-tight truncate">
+                Payload Templates & Snippets
               </h2>
-              <p className="text-[11px] text-slate-400">
-                Banking payloads, ISO 20022 messages, and custom team templates
+              <p className="text-[10.5px] text-slate-400 truncate">
+                Banking payloads, ISO 20022 messages & snippets
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* + Add Custom Snippet Button */}
             <button
               onClick={() => {
                 setShowAddForm(!showAddForm);
                 setFormError(null);
               }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
                 showAddForm
                   ? 'bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-900/30'
                   : isDarkMode
@@ -374,7 +374,7 @@ export default function SnippetDrawer({
               }`}
             >
               <Plus size={14} />
-              <span>{showAddForm ? 'Close Form' : 'Add Custom Snippet'}</span>
+              <span>{showAddForm ? 'Close Form' : 'Add Custom'}</span>
             </button>
 
             <button
@@ -389,7 +389,7 @@ export default function SnippetDrawer({
 
         {/* Custom Snippet Creator Form Modal / Inline Box */}
         {showAddForm && (
-          <div className={`p-4 border-b transition-all ${
+          <div className={`p-3.5 sm:p-4 border-b transition-all ${
             isDarkMode ? 'bg-purple-950/20 border-purple-900/40' : 'bg-purple-50/70 border-purple-200'
           }`}>
             <div className="flex items-center justify-between mb-3">
@@ -416,7 +416,7 @@ export default function SnippetDrawer({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[11px] font-bold text-slate-300 block mb-1">
                     Category

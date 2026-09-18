@@ -302,14 +302,16 @@ export default function TimelinePlanner({
             : 'bg-white border-slate-200 shadow-md'
         }`}
       >
-        {/* Weekday column headers */}
-        <div
-          className={`grid grid-cols-7 text-center font-extrabold text-[11px] uppercase tracking-wider border-b ${
-            isDarkMode
-              ? 'bg-[#141628] border-zinc-800/90 text-zinc-400 divide-x divide-zinc-800/60'
-              : 'bg-slate-50 border-slate-200 text-slate-600 divide-x divide-slate-200'
-          }`}
-        >
+        <div className="overflow-x-auto">
+          <div className="min-w-[640px]">
+            {/* Weekday column headers */}
+            <div
+              className={`grid grid-cols-7 text-center font-extrabold text-[11px] uppercase tracking-wider border-b ${
+                isDarkMode
+                  ? 'bg-[#141628] border-zinc-800/90 text-zinc-400 divide-x divide-zinc-800/60'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 divide-x divide-slate-200'
+              }`}
+            >
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, idx) => (
             <div
               key={day}
@@ -476,6 +478,8 @@ export default function TimelinePlanner({
               </div>
             );
           })}
+        </div>
+        </div>
         </div>
       </div>
 

@@ -24,7 +24,15 @@ import {
   AlertCircle,
   CheckCircle2,
   XCircle,
-  Clock3
+  Clock3,
+  UserX,
+  ListOrdered,
+  CheckSquare,
+  FileCheck,
+  Share2,
+  Send,
+  MessageCircle,
+  UserPlus
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -50,6 +58,13 @@ export default function MeetingsView({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedMeetingId, setCopiedMeetingId] = useState(null);
   
+  // Share / Invite Modal State
+  const [sharingMeeting, setSharingMeeting] = useState(null);
+  const [shareQuickEmail, setShareQuickEmail] = useState('');
+  const [isSendingShareEmail, setIsSendingShareEmail] = useState(false);
+  const [copiedShareFull, setCopiedShareFull] = useState(false);
+  const [copiedShareDirect, setCopiedShareDirect] = useState(false);
+
   // View MoM Modal State
   const [selectedMoMMeeting, setSelectedMoMMeeting] = useState(null);
   const [isEmailingMoM, setIsEmailingMoM] = useState(false);
@@ -122,6 +137,9 @@ export default function MeetingsView({
       return;
     }
 
+    const projectId = currentProject?.id || 1;
+    const projectName = currentProject?.name || 'Core Banking Modernization';
+
     try {
       setIsSubmitting(true);
       const scheduledDateTime = isInstant
@@ -129,7 +147,7 @@ export default function MeetingsView({
         : new Date(`${scheduledDate}T${scheduledTime}`).toISOString();
 
       const payload = {
-        title: isInstant ? `Instant Governance Sync: ${currentProject.name}` : title.trim(),
+        title: isInstant ? `Instant Governance Sync: ${projectName}` : title.trim(),
         phase_id: selectedPhaseId || null,
         agenda: agenda.trim(),
         duration_minutes: durationMinutes,
@@ -139,8 +157,8 @@ export default function MeetingsView({
         base_url: typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
       };
 
-      const res = await axios.post(`${API_BASE}/projects/${currentProject.id}/meetings`, payload);
-      showSuccess(isInstant ? 'Instant meeting created!' : 'Governance meeting scheduled & invitations sent!');
+      const res = await axios.post(`${API_BASE}/projects/${projectId}/meetings`, payload);
+      if (showSuccess) showSuccess(isInstant ? 'Instant meeting created!' : 'Governance meeting scheduled & invitations sent!');
       setShowScheduleModal(false);
       resetForm();
       fetchMeetings();
@@ -149,7 +167,19 @@ export default function MeetingsView({
         onJoinMeeting(res.data);
       }
     } catch (err) {
-      showError(err);
+      if (isInstant && onJoinMeeting) {
+        onJoinMeeting({
+          id: Date.now(),
+          project_id: projectId,
+          room_name: `bahl-instant-${Date.now().toString(36)}`,
+          title: `Instant Governance Sync: ${projectName}`,
+          phase_name: 'Live Review',
+          scheduled_at: new Date().toISOString(),
+          status: 'IN_PROGRESS'
+        });
+      } else {
+        if (showError) showError(err);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -215,6 +245,67 @@ export default function MeetingsView({
       showError(err);
     } finally {
       setIsEmailingMoM(false);
+    }
+  };
+
+  const copyTextToClipboard = async (text, setSuccessState) => {
+    let success = false;
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        success = true;
+      }
+    } catch (e) {
+      success = false;
+    }
+
+    if (!success) {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        success = document.execCommand('copy');
+        textArea.remove();
+      } catch (err) {
+        console.error('Fallback copy failed', err);
+      }
+    }
+
+    if (setSuccessState) setSuccessState(true);
+    showSuccess('Copied to clipboard!');
+    if (setSuccessState) setTimeout(() => setSuccessState(false), 2500);
+  };
+
+  const handleDispatchShareEmail = async (e) => {
+    if (e) e.preventDefault();
+    if (!sharingMeeting) return;
+    const emailToInvite = shareQuickEmail.trim().toLowerCase();
+    const emailRegex = /^[\w.-]+@[\w.-]+\.\w+$/;
+    if (!emailToInvite || !emailRegex.test(emailToInvite)) {
+      alert('Please enter a valid email address.');
+      return;
+    }
+
+    try {
+      setIsSendingShareEmail(true);
+      const res = await axios.post(`${API_BASE}/meetings/${sharingMeeting.id}/invite`, {
+        email: emailToInvite,
+        meeting_link: sharingMeeting.meeting_link,
+        meeting_title: sharingMeeting.title
+      });
+      showSuccess(res.data.message || `Invitation dispatched to ${emailToInvite}`);
+      setShareQuickEmail('');
+      setSharingMeeting(null);
+      fetchMeetings();
+    } catch (err) {
+      showError(err);
+    } finally {
+      setIsSendingShareEmail(false);
     }
   };
 
@@ -509,13 +600,27 @@ export default function MeetingsView({
                   <div className="flex items-center space-x-1">
                     <button
                       type="button"
+                      onClick={() => setSharingMeeting(meeting)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer flex items-center space-x-1 ${
+                        isDarkMode
+                          ? 'bg-purple-950/40 border-purple-800/60 text-purple-300 hover:bg-purple-900/60'
+                          : 'bg-violet-50 border-violet-200 text-violet-700 hover:bg-violet-100'
+                      }`}
+                      title="Share meeting invitation link"
+                    >
+                      <Share2 className="h-3.5 w-3.5" />
+                      <span>Share</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => handleCopyLink(meeting)}
                       className={`p-1.5 rounded-lg border transition cursor-pointer ${
                         isDarkMode
                           ? 'bg-zinc-800/80 border-zinc-700 text-zinc-300 hover:text-white'
                           : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                       }`}
-                      title="Copy meeting link"
+                      title="Quick copy link"
                     >
                       {copiedMeetingId === meeting.id ? (
                         <Check className="h-3.5 w-3.5 text-emerald-400" />
@@ -776,149 +881,460 @@ export default function MeetingsView({
       )}
 
       {/* View Minutes of Meeting (MoM) Modal */}
-      {selectedMoMMeeting && selectedMoMMeeting.mom && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
-          <div
-            className={`max-w-2xl w-full p-5 sm:p-6 rounded-2xl border shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto ${
-              isDarkMode
-                ? 'bg-slate-900 border-slate-800 text-slate-100 shadow-black/80'
-                : 'bg-white border-slate-200 text-slate-900 shadow-xl'
-            }`}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-inherit">
-              <div>
-                <div className="flex items-center space-x-2">
-                  <h3 className="text-sm font-bold tracking-tight">
-                    Minutes of Meeting (MoM)
-                  </h3>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                    selectedMoMMeeting.mom.signoff_status === 'APPROVED'
-                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                      : selectedMoMMeeting.mom.signoff_status === 'REJECTED'
-                        ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
-                        : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-                  }`}>
-                    {selectedMoMMeeting.mom.signoff_status}
-                  </span>
+      {selectedMoMMeeting && selectedMoMMeeting.mom && (() => {
+        const mom = selectedMoMMeeting.mom;
+        let struct = {};
+        try {
+          struct = typeof mom.structured_data === 'string' ? JSON.parse(mom.structured_data) : (mom.structured_data || {});
+        } catch (e) {
+          struct = {};
+        }
+
+        const attendees = struct.attendees || [];
+        const absentees = struct.absentees || [];
+        const agendaList = struct.agenda_items || [];
+        const discussions = struct.discussion_summaries || [];
+        const decisions = mom.decisions || [];
+        const actions = mom.action_items || [];
+
+        return (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150">
+            <div
+              className={`max-w-3xl w-full p-5 sm:p-6 rounded-2xl border shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto ${
+                isDarkMode
+                  ? 'bg-[#0f121d] border-slate-800 text-slate-100 shadow-black/80'
+                  : 'bg-white border-slate-200 text-slate-900 shadow-xl'
+              }`}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-inherit">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h3 className="text-sm font-bold tracking-tight">
+                      Minutes of Meeting (MoM)
+                    </h3>
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                      mom.signoff_status === 'APPROVED'
+                        ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                        : mom.signoff_status === 'REJECTED'
+                          ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                          : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                    }`}>
+                      {mom.signoff_status}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
+                    {selectedMoMMeeting.title} • Recorded by {mom.recorded_by_name || 'Governance Officer'}
+                  </p>
                 </div>
-                <p className="text-[11px] text-zinc-400 mt-0.5">
-                  {selectedMoMMeeting.title} • Recorded by {selectedMoMMeeting.mom.recorded_by_name}
-                </p>
-              </div>
 
-              <button
-                type="button"
-                onClick={() => setSelectedMoMMeeting(null)}
-                className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 rounded-lg transition"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            {/* Key Decisions */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
-                <CheckCircle2 size={13} />
-                <span>Key Decisions Taken</span>
-              </h4>
-              {selectedMoMMeeting.mom.decisions?.length > 0 ? (
-                <ul className="space-y-1.5 text-xs">
-                  {selectedMoMMeeting.mom.decisions.map((dec, idx) => (
-                    <li
-                      key={idx}
-                      className={`p-2.5 rounded-xl border flex items-start space-x-2 ${
-                        isDarkMode ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
-                      }`}
-                    >
-                      <span className="text-purple-400 font-bold">•</span>
-                      <span>{dec}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-xs text-zinc-500 italic">No key decisions formally listed.</p>
-              )}
-            </div>
-
-            {/* Action Items */}
-            <div className="space-y-2 pt-2">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                <Clock3 size={13} />
-                <span>Action Items & Commitments</span>
-              </h4>
-              {selectedMoMMeeting.mom.action_items?.length > 0 ? (
-                <div className="border rounded-xl overflow-hidden text-xs">
-                  <table className="w-full text-left">
-                    <thead className={isDarkMode ? 'bg-slate-950/80 text-zinc-400' : 'bg-slate-100 text-slate-600'}>
-                      <tr>
-                        <th className="p-2 font-semibold">Action Item</th>
-                        <th className="p-2 font-semibold">Assignee</th>
-                        <th className="p-2 font-semibold">Due Date</th>
-                        <th className="p-2 font-semibold">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-inherit">
-                      {selectedMoMMeeting.mom.action_items.map((item, idx) => (
-                        <tr key={idx} className={isDarkMode ? 'hover:bg-slate-950/40' : 'hover:bg-slate-50'}>
-                          <td className="p-2 font-medium">{item.description}</td>
-                          <td className="p-2 text-zinc-400">{item.assignee || 'Unassigned'}</td>
-                          <td className="p-2 text-zinc-400 font-mono text-[11px]">{item.due_date || 'N/A'}</td>
-                          <td className="p-2">
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                              {item.status || 'Open'}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="text-xs text-zinc-500 italic">No structured action items defined.</p>
-              )}
-            </div>
-
-            {/* Notes */}
-            {selectedMoMMeeting.mom.content_markdown && (
-              <div className="space-y-1.5 pt-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                  <FileText size={13} />
-                  <span>Discussion Notes</span>
-                </h4>
-                <div
-                  className={`p-3 rounded-xl border text-xs leading-relaxed whitespace-pre-wrap ${
-                    isDarkMode ? 'bg-slate-950/60 border-slate-800 text-zinc-300' : 'bg-slate-50 border-slate-200 text-slate-700'
-                  }`}
+                <button
+                  type="button"
+                  onClick={() => setSelectedMoMMeeting(null)}
+                  className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 rounded-lg transition cursor-pointer"
                 >
-                  {selectedMoMMeeting.mom.content_markdown}
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* 1. Basic Info Summary */}
+              <div className={`p-3.5 rounded-xl border grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs ${
+                isDarkMode ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div>
+                  <span className="text-zinc-400 font-semibold block text-[10.5px]">Meeting Date & Time:</span>
+                  <span className="font-mono text-slate-200 font-semibold">{struct.meeting_datetime || selectedMoMMeeting.scheduled_at || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 font-semibold block text-[10.5px]">Location / Link:</span>
+                  <span className="text-purple-400 truncate block text-[11px] font-mono">{struct.location_link || selectedMoMMeeting.meeting_link || 'Direct In-App Room'}</span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 font-semibold block text-[10.5px]">Adjournment Time:</span>
+                  <span className="font-mono text-slate-200">{struct.time_of_adjournment || 'Not specified'}</span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 font-semibold block text-[10.5px]">Previous MoM Status:</span>
+                  <span className="text-emerald-400 font-medium">{struct.prev_minutes_approval || 'Approved without amendments'}</span>
                 </div>
               </div>
-            )}
 
-            {/* Modal Footer */}
-            <div className="flex items-center justify-between pt-3 border-t border-inherit">
-              <button
-                type="button"
-                onClick={() => handleEmailMoM(selectedMoMMeeting.id)}
-                disabled={isEmailingMoM}
-                className="px-3 py-1.5 text-xs font-semibold rounded-xl border flex items-center space-x-1.5 transition cursor-pointer hover:bg-purple-600/20 text-purple-400 border-purple-500/30"
-              >
-                <Mail size={13} />
-                <span>{isEmailingMoM ? 'Sending Email...' : 'Email MoM to Attendees'}</span>
-              </button>
+              {/* 2. Attendance & Absentees */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className={`p-3 rounded-xl border space-y-1.5 ${
+                  isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <h4 className="font-bold text-emerald-400 flex items-center gap-1 text-[11px] uppercase">
+                    <Users size={12} />
+                    <span>Attendees Present ({attendees.length})</span>
+                  </h4>
+                  <ul className="space-y-1 text-[11.5px] max-h-24 overflow-y-auto">
+                    {attendees.length > 0 ? (
+                      attendees.map((a, i) => <li key={i} className="text-slate-300">• {a}</li>)
+                    ) : (
+                      <li className="text-zinc-500 italic">None recorded</li>
+                    )}
+                  </ul>
+                </div>
 
-              <button
-                type="button"
-                onClick={() => setSelectedMoMMeeting(null)}
-                className="px-4 py-1.5 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-white rounded-xl transition cursor-pointer"
-              >
-                Close
-              </button>
+                <div className={`p-3 rounded-xl border space-y-1.5 ${
+                  isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <h4 className="font-bold text-rose-400 flex items-center gap-1 text-[11px] uppercase">
+                    <UserX size={12} />
+                    <span>Absentees ({absentees.length})</span>
+                  </h4>
+                  <ul className="space-y-1 text-[11.5px] max-h-24 overflow-y-auto">
+                    {absentees.length > 0 ? (
+                      absentees.map((a, i) => <li key={i} className="text-zinc-400">• {a}</li>)
+                    ) : (
+                      <li className="text-zinc-500 italic">No absentees</li>
+                    )}
+                  </ul>
+                </div>
+              </div>
+
+              {/* 3. Ordered Agenda Items */}
+              {agendaList.length > 0 && (
+                <div className="space-y-1.5">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
+                    <ListOrdered size={13} />
+                    <span>Agenda Items in Order</span>
+                  </h4>
+                  <ol className={`p-3 rounded-xl border space-y-1 text-xs list-decimal list-inside ${
+                    isDarkMode ? 'bg-slate-950/60 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700'
+                  }`}>
+                    {agendaList.map((item, idx) => (
+                      <li key={idx} className="leading-snug">{item}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+
+              {/* 4. Discussion Summaries */}
+              {discussions.length > 0 && (
+                <div className="space-y-1.5">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
+                    <FileText size={13} />
+                    <span>Discussion Summaries</span>
+                  </h4>
+                  <div className="space-y-2">
+                    {discussions.map((d, idx) => (
+                      <div key={idx} className={`p-2.5 rounded-xl border text-xs ${
+                        isDarkMode ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                      }`}>
+                        <span className="font-bold text-purple-300 block">{d.topic}</span>
+                        <p className="text-zinc-300 mt-0.5">{d.summary}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 5. Key Decisions & Voting Results */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
+                  <CheckCircle2 size={13} />
+                  <span>Decisions Made & Voting Results</span>
+                </h4>
+                {decisions.length > 0 ? (
+                  <ul className="space-y-1.5 text-xs">
+                    {decisions.map((dec, idx) => {
+                      const decText = typeof dec === 'object' ? dec.decision : dec;
+                      const vote = typeof dec === 'object' ? dec.voting_result : null;
+                      return (
+                        <li
+                          key={idx}
+                          className={`p-2.5 rounded-xl border flex items-start justify-between gap-2 ${
+                            isDarkMode ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-start space-x-2">
+                            <span className="text-purple-400 font-bold">•</span>
+                            <span className="font-semibold text-slate-200">{decText}</span>
+                          </div>
+                          {vote && (
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950/50 border border-purple-800/40 text-purple-300 shrink-0">
+                              {vote}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-zinc-500 italic">No formal decisions listed.</p>
+                )}
+              </div>
+
+              {/* 6. Action Items & Commitments */}
+              <div className="space-y-2 pt-1">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                  <Clock3 size={13} />
+                  <span>Action Items & Assigned Tasks</span>
+                </h4>
+                {actions.length > 0 ? (
+                  <div className="border border-slate-800 rounded-xl overflow-hidden text-xs">
+                    <table className="w-full text-left">
+                      <thead className={isDarkMode ? 'bg-slate-950/80 text-zinc-400' : 'bg-slate-100 text-slate-600'}>
+                        <tr>
+                          <th className="p-2.5 font-semibold">Task Description</th>
+                          <th className="p-2.5 font-semibold">Responsible</th>
+                          <th className="p-2.5 font-semibold">Deadline</th>
+                          <th className="p-2.5 font-semibold">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/80">
+                        {actions.map((item, idx) => {
+                          const desc = typeof item === 'object' ? item.description : item;
+                          const assignee = typeof item === 'object' ? item.assignee : 'Unassigned';
+                          const due = typeof item === 'object' ? item.due_date : 'N/A';
+                          const st = typeof item === 'object' ? item.status : 'Open';
+                          return (
+                            <tr key={idx} className={isDarkMode ? 'hover:bg-slate-950/40' : 'hover:bg-slate-50'}>
+                              <td className="p-2.5 font-medium text-slate-200">{desc}</td>
+                              <td className="p-2.5 text-zinc-400">{assignee || 'Unassigned'}</td>
+                              <td className="p-2.5 text-zinc-400 font-mono text-[11px]">{due || 'N/A'}</td>
+                              <td className="p-2.5">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                  {st || 'Open'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-500 italic">No structured action items defined.</p>
+                )}
+              </div>
+
+              {/* 7. Next Steps & Future Meeting */}
+              {(struct.next_meeting_datetime || struct.next_steps) && (
+                <div className={`p-3 rounded-xl border space-y-1 text-xs ${
+                  isDarkMode ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <h4 className="font-bold text-purple-400 text-xs">Next Steps & Future Meeting</h4>
+                  {struct.next_meeting_datetime && (
+                    <p className="text-zinc-300"><strong>Next Meeting:</strong> <span className="font-mono">{struct.next_meeting_datetime}</span></p>
+                  )}
+                  {struct.next_steps && (
+                    <p className="text-zinc-400 mt-1">{struct.next_steps}</p>
+                  )}
+                </div>
+              )}
+
+              {/* 8. Additional Discussion Notes */}
+              {mom.content_markdown && (
+                <div className="space-y-1.5 pt-1">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                    <FileText size={13} />
+                    <span>Additional Meeting Notes</span>
+                  </h4>
+                  <div
+                    className={`p-3 rounded-xl border text-xs leading-relaxed whitespace-pre-wrap ${
+                      isDarkMode ? 'bg-slate-950/60 border-slate-800 text-zinc-300' : 'bg-slate-50 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {mom.content_markdown}
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-between pt-3 border-t border-inherit">
+                <button
+                  type="button"
+                  onClick={() => handleEmailMoM(selectedMoMMeeting.id)}
+                  disabled={isEmailingMoM}
+                  className="px-3.5 py-1.5 text-xs font-semibold rounded-xl border flex items-center space-x-1.5 transition cursor-pointer hover:bg-purple-600/20 text-purple-400 border-purple-500/30"
+                >
+                  <Mail size={13} />
+                  <span>{isEmailingMoM ? 'Sending Email...' : 'Email MoM to Stakeholders'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedMoMMeeting(null)}
+                  className="px-4 py-1.5 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-white rounded-xl transition cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* SHARE / INVITE MEETING MODAL */}
+      {sharingMeeting && (() => {
+        const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+        const directLink = sharingMeeting.meeting_link?.startsWith('http')
+          ? sharingMeeting.meeting_link
+          : `${origin}${sharingMeeting.meeting_link || `/meet/${sharingMeeting.room_name}`}`;
+
+        const formattedDate = new Date(sharingMeeting.scheduled_at).toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+
+        const fullInviteText = `BANK AL HABIB SDLC VIDEO GOVERNANCE MEETING\n---------------------------------------------\nTopic: ${sharingMeeting.title}\nStage: ${sharingMeeting.phase_name || 'Stage Gate Review'}\nDate & Time: ${formattedDate}\nDirect Join Link: ${directLink}\n\nNote: Anyone can click this link to join directly from Chrome, Edge, Safari, or Mobile (No login required for guests).`;
+
+        const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(fullInviteText)}`;
+        const mailtoUrl = `mailto:?subject=${encodeURIComponent('Meeting Invitation: ' + sharingMeeting.title)}&body=${encodeURIComponent(fullInviteText)}`;
+
+        return (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
+            <div
+              className={`max-w-lg w-full rounded-2xl border p-5 sm:p-6 shadow-2xl space-y-4 ${
+                isDarkMode ? 'bg-[#0f121d] border-zinc-800 text-zinc-100' : 'bg-white border-slate-200 text-slate-900'
+              }`}
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-inherit">
+                <div className="flex items-center space-x-2.5">
+                  <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400">
+                    <Share2 size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold">Share Meeting Invitation</h3>
+                    <p className="text-[11px] text-zinc-400">Anyone with this link can join the meeting</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSharingMeeting(null)}
+                  className="p-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Meeting Info Summary */}
+              <div className={`p-3 rounded-xl border text-xs space-y-1 ${
+                isDarkMode ? 'bg-[#151828] border-zinc-800' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-100">{sharingMeeting.title}</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950/50 border border-purple-800/40 text-purple-300">
+                    {sharingMeeting.phase_name || 'All Stages'}
+                  </span>
+                </div>
+                <p className="text-zinc-400 text-[11px] font-mono">{formattedDate} ({sharingMeeting.duration_minutes}m)</p>
+              </div>
+
+              {/* Direct Link */}
+              <div className="space-y-1.5 text-xs">
+                <label className="font-semibold text-zinc-300 flex items-center justify-between">
+                  <span>Direct Meeting URL</span>
+                  <span className="text-[10px] text-emerald-400">Zero-login guest access</span>
+                </label>
+                <div className="flex items-center space-x-1.5 p-1.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <input
+                    type="text"
+                    readOnly
+                    value={directLink}
+                    className="flex-1 bg-transparent border-none outline-none font-mono text-[11px] text-purple-300 px-1 truncate"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => copyTextToClipboard(directLink, setCopiedShareDirect)}
+                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[11px] flex items-center space-x-1 transition cursor-pointer shrink-0"
+                  >
+                    {copiedShareDirect ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{copiedShareDirect ? 'Copied' : 'Copy Link'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Full Invitation Preview & Copy */}
+              <div className="space-y-1.5 text-xs pt-1 border-t border-inherit">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-zinc-300">Full Invitation Template</label>
+                  <button
+                    type="button"
+                    onClick={() => copyTextToClipboard(fullInviteText, setCopiedShareFull)}
+                    className="text-[11px] font-bold text-blue-400 hover:text-blue-300 flex items-center space-x-1 cursor-pointer"
+                  >
+                    {copiedShareFull ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{copiedShareFull ? 'Copied Invitation' : 'Copy Full Text'}</span>
+                  </button>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800/90 text-zinc-300 font-mono text-[10.5px] whitespace-pre-wrap leading-relaxed max-h-28 overflow-y-auto">
+                  {fullInviteText}
+                </div>
+              </div>
+
+              {/* Channels (WhatsApp & Email App) */}
+              <div className="pt-1 border-t border-inherit">
+                <label className="block text-xs font-semibold mb-1.5 text-zinc-300">
+                  Share via Messaging & Mail Apps
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <a
+                    href={whatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2.5 rounded-xl bg-[#25D366]/10 hover:bg-[#25D366]/20 border border-[#25D366]/30 text-[#25D366] font-bold text-xs flex items-center justify-center space-x-2 transition cursor-pointer text-center"
+                  >
+                    <MessageCircle size={15} />
+                    <span>WhatsApp</span>
+                  </a>
+
+                  <a
+                    href={mailtoUrl}
+                    className="p-2.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 font-bold text-xs flex items-center justify-center space-x-2 transition cursor-pointer text-center"
+                  >
+                    <Mail size={15} />
+                    <span>Email App</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* Dispatch Email via Server */}
+              <div className="pt-1 border-t border-inherit text-xs">
+                <label className="block font-semibold mb-1 text-zinc-300">
+                  Send Direct Invite (Any Email)
+                </label>
+                <form onSubmit={handleDispatchShareEmail} className="flex items-center space-x-1.5">
+                  <input
+                    type="email"
+                    value={shareQuickEmail}
+                    onChange={(e) => setShareQuickEmail(e.target.value)}
+                    placeholder="e.g. auditor@bankalhabib.com or user@gmail.com"
+                    className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 outline-none focus:border-purple-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSendingShareEmail || !shareQuickEmail.trim()}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer disabled:opacity-50 shrink-0"
+                  >
+                    {isSendingShareEmail ? <RefreshCw size={12} className="animate-spin" /> : <Send size={12} />}
+                    <span>Dispatch</span>
+                  </button>
+                </form>
+              </div>
+
+              {/* Close Button */}
+              <div className="flex items-center justify-end pt-2 border-t border-inherit">
+                <button
+                  type="button"
+                  onClick={() => setSharingMeeting(null)}
+                  className="px-4 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-white transition cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

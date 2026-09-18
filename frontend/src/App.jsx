@@ -64,7 +64,8 @@ import {
   ChevronDown,
   ChevronUp,
   Archive,
-  Filter
+  Filter,
+  Menu
 } from 'lucide-react';
 import bahlLogo from './assets/bahl-logo.png';
 
@@ -83,7 +84,7 @@ import MeetingRoom from './components/MeetingRoom';
 import Auth from './components/Auth';
 import UploadConfirmModal from './components/UploadConfirmModal';
 
-const API_BASE = 'http://127.0.0.1:5000/api';
+const API_BASE = '/api';
 
 // Configure Axios authorization interceptor
 axios.interceptors.request.use(
@@ -122,6 +123,7 @@ export default function App() {
   // Active Workspace Tab Navigation
   // Options: 'overview' | 'board' | 'planner' | 'stage_files' | 'bug_tracker' | 'api_studio' | 'meetings' | 'team_approvals' | 'audit_trail'
   const [activeTab, setActiveTab] = useState('overview');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeMeeting, setActiveMeeting] = useState(null);
   const [directMeetRoomId, setDirectMeetRoomId] = useState(() => {
     if (typeof window === 'undefined') return null;
@@ -1771,10 +1773,77 @@ export default function App() {
         bahlLogo={bahlLogo}
         bugCount={bugCount}
         pendingUserCount={pendingUserCount}
+        isMobileOpen={isMobileMenuOpen}
+        onCloseMobile={() => setIsMobileMenuOpen(false)}
       />
 
       {/* Main Workspace Area (Scrollable flex-1) */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+        {/* Mobile Header Bar (Visible on mobile/small tablets < 768px when not in an active meeting) */}
+        {!activeMeeting && (
+          <header
+            className={`md:hidden px-3.5 py-2.5 border-b flex items-center justify-between shrink-0 z-20 ${
+              isDarkMode ? 'bg-[#0f111d] border-zinc-800 text-zinc-100' : 'bg-white border-slate-200 text-slate-900 shadow-xs'
+            }`}
+          >
+            <div className="flex items-center space-x-2.5 min-w-0">
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen(true)}
+                className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                  isDarkMode
+                    ? 'bg-[#141624] border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800'
+                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 shadow-xs'
+                }`}
+                title="Open Navigation Drawer"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              <div
+                onClick={() => {
+                  setProjSearchQuery('');
+                  setShowProjDirectoryModal(true);
+                }}
+                className="flex items-center space-x-2 min-w-0 cursor-pointer"
+                title="Switch Workspace Project"
+              >
+                <img src={bahlLogo} alt="Bank AL Habib" className="h-6 w-auto object-contain shrink-0" />
+                <span className="font-extrabold text-xs tracking-tight truncate max-w-[150px] sm:max-w-[200px]">
+                  {currentProject?.name || 'SDLC Governance'}
+                </span>
+                <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                  isDarkMode
+                    ? 'bg-[#141624] border-zinc-800 text-amber-400 hover:bg-zinc-800'
+                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 shadow-xs'
+                }`}
+                title={isDarkMode ? 'Light Mode' : 'Dark Mode'}
+              >
+                {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </button>
+
+              <div
+                onClick={openProfileModal}
+                className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-[11px] cursor-pointer border shadow-xs ${
+                  isDarkMode
+                    ? 'bg-purple-500/20 border-purple-500/40 text-purple-300'
+                    : 'bg-violet-100 border-violet-200 text-violet-700'
+                }`}
+                title="Profile & Settings"
+              >
+                {(authUser?.name || 'U').charAt(0).toUpperCase()}
+              </div>
+            </div>
+          </header>
+        )}
+
         {activeMeeting ? (
           <div className="flex-1 p-2 sm:p-4 h-full overflow-hidden">
             <MeetingRoom
@@ -2973,7 +3042,7 @@ export default function App() {
                 <div className="relative group shrink-0">
                   {profileAvatarPreview || profileAvatarUrl ? (
                     <img 
-                      src={profileAvatarPreview || `http://127.0.0.1:5000${profileAvatarUrl}`} 
+                      src={profileAvatarPreview || (profileAvatarUrl?.startsWith('/') ? profileAvatarUrl : `http://127.0.0.1:5000${profileAvatarUrl}`)} 
                       alt="Avatar preview" 
                       className="w-16 h-16 rounded-full object-cover border-2 border-purple-500 shadow-md"
                     />

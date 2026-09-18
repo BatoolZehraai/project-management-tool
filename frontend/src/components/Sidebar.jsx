@@ -17,7 +17,9 @@ import {
   Plus,
   PanelLeftClose,
   PanelLeftOpen,
-  Video
+  Video,
+  X,
+  Menu
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -34,7 +36,9 @@ export default function Sidebar({
   onLogout,
   bahlLogo,
   bugCount = 0,
-  pendingUserCount = 0
+  pendingUserCount = 0,
+  isMobileOpen = false,
+  onCloseMobile
 }) {
   const [isCollapsed, setIsCollapsed] = useState(() => {
     return localStorage.getItem('sidebar_collapsed') === 'true';
@@ -119,16 +123,17 @@ export default function Sidebar({
     .slice(0, 2);
 
   return (
-    <aside
-      className={`shrink-0 flex flex-col justify-between border-r transition-all duration-300 ease-in-out select-none z-30 ${
-        isCollapsed ? 'w-16' : 'w-64'
-      } ${
-        isDarkMode
-          ? 'bg-[#0c0e1a] border-zinc-800/80 text-zinc-100'
-          : 'bg-white border-slate-200/90 text-slate-900 shadow-xs'
-      }`}
-      style={{ minHeight: '100vh', height: '100vh', position: 'sticky', top: 0 }}
-    >
+    <>
+      <aside
+        className={`shrink-0 hidden md:flex flex-col justify-between border-r transition-all duration-300 ease-in-out select-none z-30 ${
+          isCollapsed ? 'w-16' : 'w-64'
+        } ${
+          isDarkMode
+            ? 'bg-[#0c0e1a] border-zinc-800/80 text-zinc-100'
+            : 'bg-white border-slate-200/90 text-slate-900 shadow-xs'
+        }`}
+        style={{ minHeight: '100vh', height: '100vh', position: 'sticky', top: 0 }}
+      >
       {/* Top Header: Brand, Workspace Switcher & Collapse Toggle */}
       <div className={`border-b border-inherit transition-all duration-300 ${isCollapsed ? 'p-2.5 space-y-2.5' : 'p-4 space-y-3.5'}`}>
         {/* Brand Crest + Collapse Toggle */}
@@ -364,7 +369,7 @@ export default function Sidebar({
             >
               {authUser?.avatar_url ? (
                 <img
-                  src={`http://127.0.0.1:5000${authUser.avatar_url}`}
+                  src={authUser.avatar_url.startsWith('/') ? authUser.avatar_url : `http://127.0.0.1:5000${authUser.avatar_url}`}
                   alt={authUser.name}
                   className="w-full h-full rounded-full object-cover"
                 />
@@ -409,7 +414,7 @@ export default function Sidebar({
             >
               {authUser?.avatar_url ? (
                 <img
-                  src={`http://127.0.0.1:5000${authUser.avatar_url}`}
+                  src={authUser.avatar_url.startsWith('/') ? authUser.avatar_url : `http://127.0.0.1:5000${authUser.avatar_url}`}
                   alt={authUser.name}
                   className="w-full h-full rounded-full object-cover"
                 />
@@ -482,5 +487,231 @@ export default function Sidebar({
         )}
       </div>
     </aside>
+
+    {/* Mobile Off-Canvas Drawer (Visible on small screens when isMobileOpen is true) */}
+    {isMobileOpen && (
+      <div className="fixed inset-0 z-50 md:hidden flex animate-in fade-in duration-150">
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-xs"
+          onClick={onCloseMobile}
+        />
+        <aside
+          className={`relative w-72 max-w-[85vw] h-full flex flex-col justify-between border-r shadow-2xl z-50 animate-in slide-in-from-left duration-200 ${
+            isDarkMode
+              ? 'bg-[#0c0e1a] border-zinc-800 text-zinc-100'
+              : 'bg-white border-slate-200 text-slate-900'
+          }`}
+        >
+          {/* Top Brand Header for Mobile */}
+          <div className="p-4 border-b border-inherit flex items-center justify-between">
+            <div className="flex items-center space-x-2.5 min-w-0">
+              <div
+                className={`p-1 rounded-xl border flex items-center justify-center shrink-0 ${
+                  isDarkMode
+                    ? 'bg-white/95 border-emerald-500/30 shadow-black/40'
+                    : 'bg-white border-slate-200 shadow-slate-200'
+                }`}
+              >
+                <img src={bahlLogo} alt="Bank AL Habib Logo" className="h-7 w-auto object-contain" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="font-extrabold tracking-tight text-xs leading-none truncate">
+                  Bank AL Habib
+                </h1>
+                <p
+                  className={`text-[9px] font-semibold tracking-wider uppercase mt-0.5 truncate ${
+                    isDarkMode ? 'text-emerald-400' : 'text-emerald-700'
+                  }`}
+                >
+                  SDLC Governance
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onCloseMobile}
+              className={`p-1.5 rounded-lg border transition cursor-pointer shrink-0 ${
+                isDarkMode
+                  ? 'bg-[#141624] border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 shadow-xs'
+              }`}
+              title="Close Navigation"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Project Switcher for Mobile */}
+          <div className="p-3 border-b border-inherit">
+            <div className="flex items-center space-x-1">
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenProjectDirectory();
+                  if (onCloseMobile) onCloseMobile();
+                }}
+                className={`flex-1 flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer min-w-0 ${
+                  isDarkMode
+                    ? 'bg-[#141624] border-zinc-800 text-zinc-200 hover:bg-[#1a1d30]'
+                    : 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100 shadow-xs'
+                }`}
+                title="Switch project workspace"
+              >
+                <div className="flex items-center space-x-2 min-w-0">
+                  <Layers className={`h-3.5 w-3.5 shrink-0 ${isDarkMode ? 'text-purple-400' : 'text-violet-600'}`} />
+                  <span className="truncate font-bold text-[11px]">
+                    {currentProject ? `[PRJ-${String(currentProject.id).padStart(3, '0')}] ${currentProject.name}` : 'Select Project'}
+                  </span>
+                </div>
+                <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+              </button>
+
+              {isAdmin && onOpenNewProject && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenNewProject();
+                    if (onCloseMobile) onCloseMobile();
+                  }}
+                  className={`p-1.5 rounded-xl border transition cursor-pointer shrink-0 ${
+                    isDarkMode
+                      ? 'bg-[#141624] border-zinc-800 text-purple-400 hover:bg-purple-950/40'
+                      : 'bg-slate-50 border-slate-200 text-violet-700 hover:bg-violet-50 shadow-xs'
+                  }`}
+                  title="Create New Project"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Mobile Navigation Links */}
+          <div className="flex-1 overflow-y-auto space-y-1 p-3">
+            <div
+              className={`px-3 py-1 text-[9.5px] font-black tracking-wider uppercase ${
+                isDarkMode ? 'text-zinc-400' : 'text-slate-500'
+              }`}
+            >
+              Workspaces
+            </div>
+            {navItems.map(item => {
+              if (item.adminOnly && !isAdmin) return null;
+              const isActive = activeTab === item.id;
+              const IconComponent = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    if (onCloseMobile) onCloseMobile();
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    isActive
+                      ? isDarkMode
+                        ? 'bg-gradient-to-r from-purple-600/30 to-indigo-600/30 text-purple-200 border border-purple-500/40 shadow-sm'
+                        : 'bg-gradient-to-r from-violet-600/10 to-indigo-600/10 text-violet-800 border border-violet-200 shadow-xs font-black'
+                      : isDarkMode
+                        ? 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/40 border border-transparent'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 border border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5 min-w-0">
+                    <IconComponent
+                      className={`h-4 w-4 shrink-0 ${
+                        isActive
+                          ? isDarkMode
+                            ? 'text-purple-400'
+                            : 'text-violet-600'
+                          : isDarkMode
+                            ? 'text-zinc-400'
+                            : 'text-slate-500'
+                      }`}
+                    />
+                    <span className="truncate">{item.label}</span>
+                  </div>
+                  {item.badge !== null && (
+                    <span
+                      className={`text-[9.5px] px-1.5 py-0.2 rounded-full font-mono font-black ${
+                        item.badgeColor || (isDarkMode ? 'bg-zinc-800 text-zinc-300' : 'bg-slate-200 text-slate-700')
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Mobile Footer */}
+          <div className="p-3 border-t border-inherit space-y-2">
+            <div
+              onClick={() => {
+                onOpenProfile();
+                if (onCloseMobile) onCloseMobile();
+              }}
+              className={`p-2.5 rounded-xl border flex items-center space-x-2.5 cursor-pointer transition ${
+                isDarkMode
+                  ? 'bg-[#121422] border-zinc-800/80 hover:bg-[#1a1d30]'
+                  : 'bg-slate-50 hover:bg-slate-100 border-slate-200/80 shadow-xs'
+              }`}
+            >
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                  isDarkMode
+                    ? 'bg-purple-500/20 border border-purple-500/40 text-purple-300'
+                    : 'bg-violet-100 border border-violet-200 text-violet-700'
+                }`}
+              >
+                {userInitials}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-extrabold text-xs truncate">
+                  {authUser?.name || 'Corporate User'}
+                </div>
+                <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded border uppercase tracking-wider ${
+                  isAdmin
+                    ? isDarkMode ? 'bg-purple-950/60 border-purple-800 text-purple-300' : 'bg-violet-50 border-violet-200 text-violet-700'
+                    : isDarkMode ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-slate-100 border-slate-200 text-slate-600'
+                }`}>
+                  {userRole}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={onToggleTheme}
+                className={`flex items-center space-x-1.5 text-xs px-2.5 py-1.5 rounded-lg border font-semibold transition cursor-pointer ${
+                  isDarkMode
+                    ? 'bg-[#141624] border-zinc-800 text-amber-400 hover:bg-zinc-800'
+                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 shadow-xs'
+                }`}
+              >
+                {isDarkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+                <span className="text-[11px]">{isDarkMode ? 'Light' : 'Dark'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onLogout}
+                className={`flex items-center space-x-1 text-xs px-2.5 py-1.5 rounded-lg border font-semibold transition cursor-pointer ${
+                  isDarkMode
+                    ? 'border-zinc-800 text-rose-400 hover:bg-rose-950/30'
+                    : 'border-slate-200 text-rose-600 hover:bg-rose-50 shadow-xs'
+                }`}
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span className="text-[11px]">Logout</span>
+              </button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    )}
+  </>
   );
 }

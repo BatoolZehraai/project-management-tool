@@ -475,8 +475,9 @@ class MeetingMoM(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     meeting_id = db.Column(db.Integer, db.ForeignKey('meetings.id', ondelete='CASCADE'), nullable=False, unique=True, index=True)
     content_markdown = db.Column(db.Text, nullable=True)
-    decisions_json = db.Column(db.Text, default='[]')  # JSON array of strings
+    decisions_json = db.Column(db.Text, default='[]')  # JSON array of strings or {decision, voting_result}
     action_items_json = db.Column(db.Text, default='[]')  # JSON array of {description, assignee, due_date, status}
+    structured_data_json = db.Column(db.Text, default='{}')  # Complete structured MoM JSON
     signoff_status = db.Column(db.String(30), default='PENDING', nullable=False)  # 'APPROVED', 'PENDING', 'REJECTED'
     recorded_by_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     recorded_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -488,6 +489,7 @@ class MeetingMoM(db.Model):
         import json
         decisions = []
         action_items = []
+        structured_data = {}
         try:
             decisions = json.loads(self.decisions_json) if self.decisions_json else []
         except Exception:
@@ -496,6 +498,10 @@ class MeetingMoM(db.Model):
             action_items = json.loads(self.action_items_json) if self.action_items_json else []
         except Exception:
             action_items = []
+        try:
+            structured_data = json.loads(self.structured_data_json) if self.structured_data_json else {}
+        except Exception:
+            structured_data = {}
 
         return {
             'id': self.id,
@@ -503,6 +509,7 @@ class MeetingMoM(db.Model):
             'content_markdown': self.content_markdown or '',
             'decisions': decisions,
             'action_items': action_items,
+            'structured_data': structured_data,
             'signoff_status': self.signoff_status,
             'recorded_by_id': self.recorded_by_id,
             'recorded_by_name': self.recorder.name if self.recorder else 'Secretary',

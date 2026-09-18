@@ -76,6 +76,22 @@ def token_required(f):
         return f(current_user, *args, **kwargs)
     return decorated
 
+def token_optional(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        current_user = None
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            if auth_header.startswith("Bearer "):
+                token = auth_header.split(" ")[1]
+                try:
+                    data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+                    current_user = db.session.get(User, data['user_id'])
+                except Exception:
+                    current_user = None
+        return f(current_user, *args, **kwargs)
+    return decorated
+
 def admin_required(f):
     @wraps(f)
     def decorated(current_user, *args, **kwargs):
@@ -115,7 +131,8 @@ def migrate_database_schema():
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio VARCHAR(250)",
                 "ALTER TABLE project_phases ADD COLUMN IF NOT EXISTS governing_department VARCHAR(100)",
                 "ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS bug_id INTEGER",
-                "ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS bug_title VARCHAR(150)"
+                "ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS bug_title VARCHAR(150)",
+                "ALTER TABLE meeting_moms ADD COLUMN IF NOT EXISTS structured_data_json TEXT DEFAULT '{}'"
             ]
             with db.engine.connect() as conn:
                 for stmt in col_stmts:
@@ -185,29 +202,65 @@ def seed_data():
         db.create_all()
         migrate_database_schema()
         
-        # Check if Admin seeded
+        # Check and ensure Admin seeded
         admin_email = 'admin' + INTERNAL_DOMAIN
         admin = User.query.filter_by(email=admin_email).first()
         if not admin:
-            # Hash password
-            hashed = generate_password_hash('Admin123!')
             admin = User(
                 name='Corporate Administrator',
                 email=admin_email,
-                password_hash=hashed,
+                password_hash=generate_password_hash('Admin123!'),
                 department='Executive Management',
                 role='SUPER_ADMIN',
                 status='APPROVED'
             )
             db.session.add(admin)
-            db.session.commit()
             print(f"Seeded administrator: {admin_email}")
+        else:
+            admin.password_hash = generate_password_hash('Admin123!')
+            admin.status = 'APPROVED'
+            admin.role = 'SUPER_ADMIN'
+
+        # Ensure Software Dev Demo User
+        swe_email = 'dev.991' + INTERNAL_DOMAIN
+        swe = User.query.filter_by(email=swe_email).first()
+        if not swe:
+            swe = User(
+                name='Ahmer Developer',
+                email=swe_email,
+                password_hash=generate_password_hash('Password123!'),
+                department='Software Engineering',
+                role='TEAM_MEMBER',
+                status='APPROVED'
+            )
+            db.session.add(swe)
+        else:
+            swe.password_hash = generate_password_hash('Password123!')
+            swe.status = 'APPROVED'
+
+        # Ensure Business Analyst Demo User
+        ba_email = 'analyst.992' + INTERNAL_DOMAIN
+        ba = User.query.filter_by(email=ba_email).first()
+        if not ba:
+            ba = User(
+                name='Fatima Analyst',
+                email=ba_email,
+                password_hash=generate_password_hash('Password123!'),
+                department='Business Analysis',
+                role='DEPT_HEAD',
+                status='APPROVED'
+            )
+            db.session.add(ba)
+        else:
+            ba.password_hash = generate_password_hash('Password123!')
+            ba.status = 'APPROVED'
+
+        db.session.commit()
 
         # Check if sample project exists, otherwise seed one
         if not Project.query.first():
             p = Project(
-                name="Core Banking Ledger System Migration",
-                description="Upgrading transactional ledger microservices to support ISO 20022 compliance."
+                name="Core Banking Ledger System Migration"
             )
             db.session.add(p)
             db.session.commit()
@@ -2681,56 +2734,109 @@ def get_public_meeting_info(room_name):
         })
     return jsonify(meeting.to_dict())
 
+# In-memory meeting presence registry: room_name -> { participant_id: { ... } }
+MEETING_PRESENCE = {}
+
+@app.route('/api/meetings/public/<string:room_name>/presence', methods=['GET', 'POST'])
+def handle_meeting_presence(room_name):
+    now_ts = time.time()
+    if room_name not in MEETING_PRESENCE:
+        MEETING_PRESENCE[room_name] = {}
+        
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        participant_id = str(data.get('id') or request.remote_addr or 'guest_' + str(int(now_ts)))
+        MEETING_PRESENCE[room_name][participant_id] = {
+            'id': participant_id,
+            'name': data.get('name') or 'Corporate Delegate',
+            'email': data.get('email') or '',
+            'role': data.get('role') or 'PARTICIPANT',
+            'department': data.get('department') or 'Governance',
+            'is_mic_on': data.get('is_mic_on', True),
+            'is_cam_on': data.get('is_cam_on', False) if 'is_cam_on' in data else False,
+            'is_screen_sharing': data.get('is_screen_sharing', False),
+            'last_seen': now_ts
+        }
+
+    # Prune participants inactive for > 20 seconds
+    active_participants = [
+        p for p in MEETING_PRESENCE[room_name].values()
+        if now_ts - p.get('last_seen', 0) < 20
+    ]
+    return jsonify({'participants': active_participants})
+
+@app.route('/api/meetings/public/<string:room_name>/presence/<string:participant_id>', methods=['DELETE'])
+def leave_meeting_presence(room_name, participant_id):
+    if room_name in MEETING_PRESENCE and str(participant_id) in MEETING_PRESENCE[room_name]:
+        del MEETING_PRESENCE[room_name][str(participant_id)]
+    return jsonify({'success': True})
+
 @app.route('/api/meetings/<int:meeting_id>/invite', methods=['POST'])
-@token_required
-def invite_to_meeting(current_user, meeting_id):
-    meeting = db.session.get(Meeting, meeting_id)
-    if not meeting:
-        return jsonify({'error': 'Meeting not found'}), 404
+@app.route('/api/meetings/public/<string:room_name>/invite', methods=['POST'])
+@token_optional
+def invite_to_meeting(current_user, meeting_id=None, room_name=None):
+    meeting = None
+    if meeting_id:
+        meeting = db.session.get(Meeting, meeting_id)
+    elif room_name:
+        meeting = Meeting.query.filter_by(room_name=room_name).first()
         
     data = request.get_json() or {}
     email_str = (data.get('email') or '').strip().lower()
     email_regex = r'^[\w\.-]+@[\w\.-]+\.\w+$'
     if not email_str or not re.match(email_regex, email_str):
         return jsonify({'error': 'A valid email address is required'}), 400
-        
-    existing = MeetingAttendee.query.filter_by(meeting_id=meeting.id, email=email_str).first()
-    if not existing:
-        attendee = MeetingAttendee(
-            meeting_id=meeting.id,
-            email=email_str,
-            role_designation='Invited Participant'
-        )
-        db.session.add(attendee)
-        
-    ics_file = generate_ics_content(meeting)
-    subject = f"[Bank AL Habib SDLC] Urgent Meeting Invite: {meeting.title}"
+
+    direct_link = data.get('meeting_link') or (meeting.meeting_link if meeting else f"/meet/{room_name or 'governance-session'}")
+    meeting_title = meeting.title if meeting else data.get('meeting_title', 'SDLC Governance Video Meeting')
+
+    if meeting:
+        existing = MeetingAttendee.query.filter_by(meeting_id=meeting.id, email=email_str).first()
+        if not existing:
+            attendee = MeetingAttendee(
+                meeting_id=meeting.id,
+                email=email_str,
+                role_designation='Invited Participant'
+            )
+            db.session.add(attendee)
+            
+        ics_file = generate_ics_content(meeting)
+    else:
+        ics_file = None
+
+    subject = f"[Bank AL Habib SDLC] Virtual Meeting Invitation: {meeting_title}"
     body = f"""
     <h2>Bank AL Habib SDLC Governance Meeting Invitation</h2>
     <p>You have been invited to join an active governance meeting session.</p>
-    <p><strong>Title:</strong> {meeting.title}</p>
-    <p><strong>Join Link:</strong> <a href="{meeting.meeting_link}">{meeting.meeting_link}</a></p>
+    <p><strong>Title:</strong> {meeting_title}</p>
+    <p><strong>Direct Join Link (No login required for guests):</strong> <a href="{direct_link}">{direct_link}</a></p>
+    <p style="color:#64748b; font-size:12px;">Click the link above to join directly from Chrome, Edge, Safari, or mobile browser.</p>
     """
     simulate_email_dispatch([email_str], subject, body, ics_file)
     
-    audit = ActivityLog(
-        project_id=meeting.project_id,
-        user_id=current_user.id,
-        user_name=current_user.name,
-        user_email=current_user.email,
-        user_role=current_user.role,
-        action_type='MEETING_INVITE_SENT',
-        task_title=meeting.title,
-        details=f"Meeting invitation dispatched to {email_str} for '{meeting.title}' by {current_user.name}",
-        previous_state=None,
-        new_state=None
-    )
-    db.session.add(audit)
-    db.session.commit()
+    sender_name = current_user.name if current_user else 'Meeting Host'
+    if meeting and current_user:
+        audit = ActivityLog(
+            project_id=meeting.project_id,
+            user_id=current_user.id,
+            user_name=current_user.name,
+            user_email=current_user.email,
+            user_role=current_user.role,
+            action_type='MEETING_INVITE_SENT',
+            task_title=meeting.title,
+            details=f"Meeting invitation dispatched to {email_str} for '{meeting.title}' by {sender_name}",
+            previous_state=None,
+            new_state=None
+        )
+        db.session.add(audit)
+        db.session.commit()
+    elif meeting:
+        db.session.commit()
     
     return jsonify({
         'message': f"Meeting invitation successfully dispatched to {email_str}",
-        'email': email_str
+        'email': email_str,
+        'meeting_link': direct_link
     })
 
 @app.route('/api/meetings/<int:meeting_id>/status', methods=['PATCH'])
@@ -2765,17 +2871,54 @@ def update_meeting_status(current_user, meeting_id):
     db.session.commit()
     return jsonify(meeting.to_dict())
 
-@app.route('/api/projects/<int:project_id>/meetings/<int:meeting_id>/mom', methods=['POST'])
+@app.route('/api/projects/<int:project_id>/meetings/<meeting_id>/mom', methods=['POST'])
 @token_required
 def save_meeting_mom(current_user, project_id, meeting_id):
-    meeting = db.session.get(Meeting, meeting_id)
-    if not meeting or meeting.project_id != project_id:
-        return jsonify({'error': 'Meeting not found in this project'}), 404
-        
+    meeting = None
+    try:
+        meeting_int_id = int(meeting_id)
+        meeting = db.session.get(Meeting, meeting_int_id)
+    except (ValueError, TypeError):
+        meeting = None
+
     data = request.get_json() or {}
+    room_name = data.get('room_name') or f"bahl-meeting-{meeting_id}"
+
+    if not meeting:
+        # Check by room_name or create on the fly for instant meetings
+        meeting = Meeting.query.filter_by(project_id=project_id, room_name=room_name).first()
+        if not meeting:
+            meeting = Meeting(
+                project_id=project_id,
+                title=data.get('meeting_title') or f"Governance Session ({datetime.datetime.utcnow().strftime('%b %d')})",
+                scheduled_at=datetime.datetime.utcnow(),
+                duration_minutes=30,
+                room_name=room_name,
+                meeting_link=f"/meet/{room_name}",
+                created_by_id=current_user.id,
+                status='IN_PROGRESS'
+            )
+            db.session.add(meeting)
+            db.session.commit()
     content_markdown = data.get('content_markdown', '')
     decisions = data.get('decisions', [])
     action_items = data.get('action_items', [])
+    structured_data = data.get('structured_data')
+    if not structured_data or not isinstance(structured_data, dict):
+        structured_data = {
+            'meeting_datetime': data.get('meeting_datetime'),
+            'location_link': data.get('location_link'),
+            'time_of_adjournment': data.get('time_of_adjournment'),
+            'signoff_status': data.get('signoff_status', 'PENDING'),
+            'attendees': data.get('attendees', []),
+            'absentees': data.get('absentees', []),
+            'previous_meeting_approval': data.get('previous_meeting_approval', 'APPROVED'),
+            'prev_minutes_notes': data.get('prev_minutes_notes', ''),
+            'agenda_items': data.get('agenda_items', []),
+            'discussion_summaries': data.get('discussion_summaries') or data.get('summaries', []),
+            'next_meeting_datetime': data.get('next_meeting_datetime'),
+            'next_steps': data.get('next_steps', '')
+        }
     signoff_status = data.get('signoff_status', 'PENDING')
     
     if signoff_status not in ['APPROVED', 'PENDING', 'REJECTED']:
@@ -2788,6 +2931,7 @@ def save_meeting_mom(current_user, project_id, meeting_id):
             content_markdown=content_markdown,
             decisions_json=json.dumps(decisions) if isinstance(decisions, list) else str(decisions),
             action_items_json=json.dumps(action_items) if isinstance(action_items, list) else str(action_items),
+            structured_data_json=json.dumps(structured_data) if isinstance(structured_data, dict) else str(structured_data),
             signoff_status=signoff_status,
             recorded_by_id=current_user.id
         )
@@ -2796,6 +2940,7 @@ def save_meeting_mom(current_user, project_id, meeting_id):
         mom.content_markdown = content_markdown
         mom.decisions_json = json.dumps(decisions) if isinstance(decisions, list) else str(decisions)
         mom.action_items_json = json.dumps(action_items) if isinstance(action_items, list) else str(action_items)
+        mom.structured_data_json = json.dumps(structured_data) if isinstance(structured_data, dict) else str(structured_data)
         mom.signoff_status = signoff_status
         mom.recorded_by_id = current_user.id
         mom.updated_at = datetime.datetime.utcnow()
@@ -2825,11 +2970,22 @@ def save_meeting_mom(current_user, project_id, meeting_id):
         'meeting': meeting.to_dict()
     })
 
-@app.route('/api/projects/<int:project_id>/meetings/<int:meeting_id>/mom/email', methods=['POST'])
+@app.route('/api/projects/<int:project_id>/meetings/<meeting_id>/mom/email', methods=['POST'])
 @token_required
 def email_meeting_mom(current_user, project_id, meeting_id):
-    meeting = db.session.get(Meeting, meeting_id)
-    if not meeting or meeting.project_id != project_id:
+    meeting = None
+    try:
+        meeting_int_id = int(meeting_id)
+        meeting = db.session.get(Meeting, meeting_int_id)
+    except (ValueError, TypeError):
+        meeting = None
+
+    if not meeting:
+        data = request.get_json() or {}
+        room_name = data.get('room_name') or f"bahl-meeting-{meeting_id}"
+        meeting = Meeting.query.filter_by(project_id=project_id, room_name=room_name).first()
+
+    if not meeting:
         return jsonify({'error': 'Meeting not found in this project'}), 404
         
     mom = meeting.mom
@@ -2842,6 +2998,7 @@ def email_meeting_mom(current_user, project_id, meeting_id):
         
     decisions = []
     action_items = []
+    structured = {}
     try:
         decisions = json.loads(mom.decisions_json) if mom.decisions_json else []
     except Exception:
@@ -2850,35 +3007,71 @@ def email_meeting_mom(current_user, project_id, meeting_id):
         action_items = json.loads(mom.action_items_json) if mom.action_items_json else []
     except Exception:
         action_items = []
+    try:
+        structured = json.loads(mom.structured_data_json) if mom.structured_data_json else {}
+    except Exception:
+        structured = {}
         
-    decisions_html = "".join([f"<li>{d}</li>" for d in decisions]) or "<li>None recorded</li>"
-    actions_html = "".join([
-        f"<tr><td>{a.get('description', '')}</td><td>{a.get('assignee', 'Unassigned')}</td><td>{a.get('due_date', 'N/A')}</td><td>{a.get('status', 'Open')}</td></tr>"
-        for a in action_items
-    ]) or "<tr><td colspan='4'>None recorded</td></tr>"
+    decisions_list = []
+    for d in decisions:
+        if isinstance(d, dict):
+            vote_txt = f" <em>(Voting: {d.get('voting_result')})</em>" if d.get('voting_result') else ""
+            decisions_list.append(f"<li><strong>{d.get('decision', '')}</strong>{vote_txt}</li>")
+        else:
+            decisions_list.append(f"<li><strong>{d}</strong></li>")
+    decisions_html = "".join(decisions_list) or "<li>None recorded</li>"
+
+    actions_list = []
+    for a in action_items:
+        if isinstance(a, dict):
+            actions_list.append(f"<tr><td>{a.get('description', '')}</td><td>{a.get('assignee', 'Unassigned')}</td><td>{a.get('due_date', 'N/A')}</td><td>{a.get('status', 'Open')}</td></tr>")
+        else:
+            actions_list.append(f"<tr><td colspan='4'>{a}</td></tr>")
+    actions_html = "".join(actions_list) or "<tr><td colspan='4'>None recorded</td></tr>"
+
+    agenda_html = "".join([f"<li>{item}</li>" for item in structured.get('agenda_items', [])]) or "<li>No agenda items listed</li>"
+    attendees_str = ", ".join(structured.get('attendees', [])) or "None listed"
+    absentees_str = ", ".join(structured.get('absentees', [])) or "None"
     
-    subject = f"[MoM Summary] {meeting.title} - Bank AL Habib Governance"
+    subject = f"[MoM Summary] {meeting.title} - Bank AL Habib SDLC Governance"
     body = f"""
-    <h2>Governance Minutes of Meeting (MoM)</h2>
-    <p><strong>Meeting:</strong> {meeting.title}</p>
+    <h2>Bank AL Habib SDLC Governance - Minutes of Meeting (MoM)</h2>
+    <hr/>
+    <p><strong>Meeting Title:</strong> {meeting.title}</p>
+    <p><strong>Date & Time:</strong> {structured.get('meeting_datetime', meeting.scheduled_at.isoformat() if meeting.scheduled_at else 'N/A')}</p>
+    <p><strong>Location / Link:</strong> {structured.get('location_link', meeting.meeting_link or 'N/A')}</p>
+    <p><strong>Time of Adjournment:</strong> {structured.get('time_of_adjournment', 'N/A')}</p>
     <p><strong>Stage Gate Sign-Off:</strong> <span style="font-weight:bold; color: {'#16a34a' if mom.signoff_status == 'APPROVED' else '#dc2626' if mom.signoff_status == 'REJECTED' else '#d97706'};">{mom.signoff_status}</span></p>
-    <p><strong>Recorded By:</strong> {current_user.name} ({current_user.email})</p>
+    <p><strong>Approval of Previous MoM:</strong> {structured.get('prev_minutes_approval', 'N/A')}</p>
     
-    <h3>Key Decisions:</h3>
+    <h3>Attendance:</h3>
+    <p><strong>Attendees (Present):</strong> {attendees_str}</p>
+    <p><strong>Absentees:</strong> {absentees_str}</p>
+
+    <h3>Agenda Items in Order:</h3>
+    <ol>{agenda_html}</ol>
+
+    <h3>Discussion Summary:</h3>
+    <p>{mom.content_markdown or 'No detailed discussion notes recorded.'}</p>
+    
+    <h3>Decisions Made & Voting Results:</h3>
     <ul>{decisions_html}</ul>
     
-    <h3>Action Items:</h3>
-    <table border="1" cellpadding="5" cellspacing="0">
+    <h3>Action Items & Assigned Deliverables:</h3>
+    <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse; width:100%;">
       <thead>
-        <tr><th>Action Item</th><th>Assignee</th><th>Due Date</th><th>Status</th></tr>
+        <tr style="background:#f1f5f9;"><th>Task Description</th><th>Person Responsible</th><th>Deadline</th><th>Status</th></tr>
       </thead>
       <tbody>{actions_html}</tbody>
     </table>
-    
-    <h3>Detailed Meeting Notes:</h3>
-    <pre style="background:#f4f4f4; padding:10px; border-radius:5px;">{mom.content_markdown or 'No additional notes'}</pre>
+
+    <h3>Next Steps & Future Meeting:</h3>
+    <p><strong>Next Meeting Date/Time:</strong> {structured.get('next_meeting_datetime', 'To be scheduled')}</p>
+    <p><strong>Next Steps:</strong> {structured.get('next_steps', 'None')}</p>
+    <hr/>
+    <p style="font-size:11px; color:#64748b;">Recorded by: {current_user.name} ({current_user.email}) | Bank AL Habib SDLC Governance Engine</p>
     """
-    
+
     result = simulate_email_dispatch(attendees, subject, body)
     return jsonify({
         'message': f"Minutes of Meeting successfully emailed to {len(attendees)} attendee(s)",

@@ -29,6 +29,8 @@ import {
   Layers,
   Sparkles,
   Volume2,
+  VolumeX,
+  PhoneOff,
   Maximize2,
   Minimize2,
   ChevronRight,
@@ -79,6 +81,7 @@ export default function MeetingRoom({
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [copiedAppUrl, setCopiedAppUrl] = useState(false);
+  const [copiedRoomId, setCopiedRoomId] = useState(false);
   const [quickInviteEmail, setQuickInviteEmail] = useState('');
   const [isSendingQuickInvite, setIsSendingQuickInvite] = useState(false);
   const [isSavingMoM, setIsSavingMoM] = useState(false);
@@ -92,6 +95,7 @@ export default function MeetingRoom({
   const [isMicOn, setIsMicOn] = useState(true);
   const [isCamOn, setIsCamOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [isSpeakerMuted, setIsSpeakerMuted] = useState(false);
 
   // Dynamic Remote Active Attendees list (Only users who actually joined)
   const [remoteAttendees, setRemoteAttendees] = useState([]);
@@ -448,6 +452,23 @@ export default function MeetingRoom({
     }
   };
 
+  // Toggle Speaker / Output Audio
+  const toggleSpeaker = () => {
+    const nextState = !isSpeakerMuted;
+    setIsSpeakerMuted(nextState);
+    try {
+      const mediaElements = document.querySelectorAll('video, audio');
+      mediaElements.forEach(el => {
+        if (el !== localVideoRef.current) {
+          el.muted = nextState;
+        }
+      });
+      if (showSuccess) showSuccess(nextState ? 'Speaker output muted' : 'Speaker output active');
+    } catch (err) {
+      console.warn('Speaker toggle error:', err);
+    }
+  };
+
   // Toggle Fullscreen
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -612,38 +633,6 @@ export default function MeetingRoom({
     }
   };
 
-  // Quick email invite sender during call
-  const handleSendQuickInvite = async (e) => {
-    if (e) e.preventDefault();
-    const emailToInvite = quickInviteEmail.trim().toLowerCase();
-    const emailRegex = /^[\w.-]+@[\w.-]+\.\w+$/;
-    if (!emailToInvite || !emailRegex.test(emailToInvite)) {
-      alert('Please enter a valid email address.');
-      return;
-    }
-
-    try {
-      setIsSendingQuickInvite(true);
-      const url = meeting?.id 
-        ? `${API_BASE}/meetings/${meeting.id}/invite` 
-        : `${API_BASE}/meetings/public/${roomName}/invite`;
-
-      const res = await axios.post(url, {
-        email: emailToInvite,
-        meeting_link: directAppMeetingLink,
-        meeting_title: meeting?.title || 'SDLC Governance Video Conference'
-      });
-      if (showSuccess) showSuccess(res.data.message || `Invitation dispatched to ${emailToInvite}`);
-      setQuickInviteEmail('');
-      setShowInviteModal(false);
-    } catch (err) {
-      if (showError) showError(err);
-      else alert('Failed to send invitation.');
-    } finally {
-      setIsSendingQuickInvite(false);
-    }
-  };
-
   // =========================================================================
   // MoM SECTION HANDLERS (FILL / EDIT / DELETE)
   // =========================================================================
@@ -674,6 +663,42 @@ export default function MeetingRoom({
 
   const handleRemoveAttendee = (idx) => {
     setAttendeesList(attendeesList.filter((_, i) => i !== idx));
+  };
+
+  // Real-Time Email Invitation Dispatch
+  const handleSendQuickInvite = async (e) => {
+    if (e) e.preventDefault();
+    const emailToInvite = quickInviteEmail.trim().toLowerCase();
+    const emailRegex = /^[\w.-]+@[\w.-]+\.\w+$/;
+    if (!emailToInvite || !emailRegex.test(emailToInvite)) {
+      if (showError) showError('Please enter a valid email address.');
+      return;
+    }
+
+    try {
+      setIsSendingQuickInvite(true);
+      const url = meeting?.id
+        ? `${API_BASE}/meetings/${meeting.id}/invite`
+        : `${API_BASE}/meetings/public/${roomName}/invite`;
+        
+      const res = await axios.post(url, {
+        email: emailToInvite,
+        meeting_link: directAppMeetingLink,
+        meeting_title: meeting?.title || 'Corporate Video Governance Meeting'
+      });
+
+      if (showSuccess) showSuccess(res.data?.message || `Real-time invitation dispatched to ${emailToInvite}`);
+      setQuickInviteEmail('');
+      
+      const newEntry = `${emailToInvite} (Invited)`;
+      if (!attendeesList.includes(newEntry) && !attendeesList.includes(emailToInvite)) {
+        setAttendeesList(prev => [...prev, newEntry]);
+      }
+    } catch (err) {
+      if (showError) showError(err.response?.data?.error || err.message || 'Failed to dispatch email');
+    } finally {
+      setIsSendingQuickInvite(false);
+    }
   };
 
   // Attendance Actions (Absentees)
@@ -2114,11 +2139,11 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
           
           {/* MODE 1: NATIVE WEBRTC STUDIO */}
           {conferenceMode === 'studio' && (
-            <div className="flex-1 p-3 sm:p-4 flex flex-col justify-between overflow-hidden relative">
+            <div className="flex-1 min-h-0 p-2 sm:p-3 md:p-4 flex flex-col justify-between overflow-hidden relative">
               
               {/* Screen Share View (if active) */}
               {isScreenSharing && (
-                <div className="mb-3 flex-1 rounded-2xl bg-black border border-purple-500/40 relative overflow-hidden flex items-center justify-center shadow-2xl">
+                <div className="mb-2 sm:mb-3 flex-1 min-h-0 rounded-2xl bg-black border border-purple-500/40 relative overflow-hidden flex items-center justify-center shadow-2xl">
                   <video
                     ref={screenVideoRef}
                     autoPlay
@@ -2133,7 +2158,7 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
               )}
 
               {/* Dynamic Responsive Participant Grid */}
-              <div className={`flex-1 w-full h-full grid gap-3 items-center justify-center ${
+              <div className={`flex-1 min-h-0 w-full grid gap-2 sm:gap-3 items-center justify-center overflow-hidden ${
                 isScreenSharing
                   ? 'grid-cols-2 max-h-44'
                   : totalInRoom === 1
@@ -2146,9 +2171,9 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
               }`}>
                 
                 {/* 1. SELF PARTICIPANT TILE */}
-                <div className="w-full h-full rounded-2xl border border-slate-800/90 bg-gradient-to-b from-[#161a29] to-[#0f111a] flex flex-col justify-between relative overflow-hidden transition-all duration-300 shadow-2xl group">
+                <div className="w-full h-full min-h-0 rounded-2xl border border-slate-800/90 bg-gradient-to-b from-[#161a29] to-[#0f111a] flex flex-col justify-between relative overflow-hidden transition-all duration-300 shadow-2xl group">
                   
-                  <div className="flex-1 flex items-center justify-center relative w-full h-full p-4">
+                  <div className="flex-1 min-h-0 flex items-center justify-center relative w-full h-full p-2 sm:p-4 overflow-hidden">
                     {isCamOn ? (
                       <video
                         ref={localVideoRef}
@@ -2184,9 +2209,9 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                 {remoteAttendees.map((remoteUser) => (
                   <div
                     key={remoteUser.id}
-                    className="w-full h-full rounded-2xl border border-slate-800/90 bg-gradient-to-b from-[#141724] to-[#0e1017] flex flex-col justify-between relative overflow-hidden transition-all duration-300 shadow-2xl group"
+                    className="w-full h-full min-h-0 rounded-2xl border border-slate-800/90 bg-gradient-to-b from-[#141724] to-[#0e1017] flex flex-col justify-between relative overflow-hidden transition-all duration-300 shadow-2xl group"
                   >
-                    <div className="flex-1 flex items-center justify-center relative w-full h-full p-4">
+                    <div className="flex-1 min-h-0 flex items-center justify-center relative w-full h-full p-2 sm:p-4">
                       <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-tr from-indigo-700 via-blue-600 to-cyan-500 text-white font-extrabold text-3xl sm:text-4xl flex items-center justify-center shadow-2xl border-2 border-blue-400/40 relative z-10">
                         {remoteUser.name.charAt(0)}
                       </div>
@@ -2204,7 +2229,7 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
 
               {/* Waiting Notification Banner */}
               {totalInRoom === 1 && (
-                <div className="my-2 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-zinc-400 text-xs flex items-center justify-between">
+                <div className="my-2 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-zinc-400 text-xs flex items-center justify-between shrink-0">
                   <div className="flex items-center space-x-2">
                     <Info size={13} className="text-purple-400 shrink-0" />
                     <span>You are the only person in this meeting. Invite team members to join.</span>
@@ -2224,7 +2249,7 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
               )}
 
               {/* Fixed Bottom Controls Bar (Zoom/Teams Always-On Interface) */}
-              <div className="h-16 px-2 sm:px-6 rounded-2xl bg-[#131622]/95 border border-slate-800 flex items-center justify-between shadow-2xl backdrop-blur-2xl shrink-0 mt-2 z-20 overflow-x-auto gap-1 sm:gap-3">
+              <div className="h-16 px-2 sm:px-4 md:px-6 rounded-2xl bg-[#131622]/95 border border-slate-800 flex items-center justify-between shadow-2xl backdrop-blur-2xl shrink-0 mt-2 z-20 overflow-x-auto gap-1 sm:gap-2 md:gap-3">
                 {/* Left: Meeting Name */}
                 <div className="hidden lg:flex items-center space-x-2 shrink-0">
                   <span className="text-[11px] font-mono text-zinc-400 truncate max-w-[140px]" title={roomName}>
@@ -2233,13 +2258,13 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                 </div>
 
                 {/* Center: Primary Media Controls */}
-                <div className="flex items-center space-x-1 sm:space-x-2 md:space-x-3 shrink-0">
+                <div className="flex items-center space-x-1 sm:space-x-2 md:space-x-2.5 shrink-0">
                   
-                  {/* MUTE / UNMUTE */}
+                  {/* MUTE / UNMUTE MICROPHONE */}
                   <button
                     type="button"
                     onClick={toggleMicrophone}
-                    className={`flex flex-col items-center justify-center w-11 sm:w-14 md:w-16 h-11 sm:h-12 rounded-xl transition cursor-pointer ${
+                    className={`flex flex-col items-center justify-center w-11 sm:w-13 md:w-14 h-11 sm:h-12 rounded-xl transition cursor-pointer ${
                       isMicOn
                         ? 'bg-slate-800/90 hover:bg-slate-750 text-slate-200 border border-slate-700'
                         : 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-950/50'
@@ -2247,25 +2272,42 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                     title={isMicOn ? 'Mute Microphone' : 'Unmute Microphone'}
                   >
                     {isMicOn ? <Mic size={16} className="text-emerald-400" /> : <MicOff size={16} />}
-                    <span className="text-[8.5px] sm:text-[9.5px] font-bold mt-0.5 tracking-tight">
-                      {isMicOn ? 'Mute' : 'Unmute'}
+                    <span className="text-[8.5px] sm:text-[9px] font-bold mt-0.5 tracking-tight truncate max-w-[48px]">
+                      {isMicOn ? 'Mic On' : 'Muted'}
                     </span>
                   </button>
 
-                  {/* START / STOP VIDEO */}
+                  {/* START / STOP VIDEO CAMERA */}
                   <button
                     type="button"
                     onClick={toggleCamera}
-                    className={`flex flex-col items-center justify-center w-11 sm:w-14 md:w-16 h-11 sm:h-12 rounded-xl transition cursor-pointer ${
+                    className={`flex flex-col items-center justify-center w-11 sm:w-13 md:w-14 h-11 sm:h-12 rounded-xl transition cursor-pointer ${
                       isCamOn
                         ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-950/50'
                         : 'bg-slate-800/90 hover:bg-slate-750 text-slate-200 border border-slate-700'
                     }`}
-                    title={isCamOn ? 'Stop Video' : 'Start Video'}
+                    title={isCamOn ? 'Stop Video Camera' : 'Start Video Camera'}
                   >
                     {isCamOn ? <Video size={16} /> : <VideoOff size={16} className="text-rose-400" />}
-                    <span className="text-[8.5px] sm:text-[9.5px] font-bold mt-0.5 tracking-tight truncate max-w-[50px]">
-                      {isCamOn ? 'Video' : 'No Video'}
+                    <span className="text-[8.5px] sm:text-[9px] font-bold mt-0.5 tracking-tight truncate max-w-[48px]">
+                      {isCamOn ? 'Video On' : 'No Video'}
+                    </span>
+                  </button>
+
+                  {/* SPEAKER / AUDIO OUTPUT TOGGLE */}
+                  <button
+                    type="button"
+                    onClick={toggleSpeaker}
+                    className={`flex flex-col items-center justify-center w-11 sm:w-13 md:w-14 h-11 sm:h-12 rounded-xl transition cursor-pointer ${
+                      isSpeakerMuted
+                        ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-950/50'
+                        : 'bg-slate-800/90 hover:bg-slate-750 text-slate-200 border border-slate-700'
+                    }`}
+                    title={isSpeakerMuted ? 'Unmute Speaker Output' : 'Mute Speaker Output'}
+                  >
+                    {isSpeakerMuted ? <VolumeX size={16} className="text-white" /> : <Volume2 size={16} className="text-cyan-400" />}
+                    <span className="text-[8.5px] sm:text-[9px] font-bold mt-0.5 tracking-tight truncate max-w-[48px]">
+                      {isSpeakerMuted ? 'Spkr Off' : 'Speaker'}
                     </span>
                   </button>
 
@@ -2273,15 +2315,15 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                   <button
                     type="button"
                     onClick={toggleScreenShare}
-                    className={`flex flex-col items-center justify-center w-11 sm:w-14 md:w-16 h-11 sm:h-12 rounded-xl transition cursor-pointer ${
+                    className={`flex flex-col items-center justify-center w-11 sm:w-13 md:w-14 h-11 sm:h-12 rounded-xl transition cursor-pointer ${
                       isScreenSharing
                         ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg'
                         : 'bg-slate-800/90 hover:bg-slate-750 text-slate-200 border border-slate-700'
                     }`}
-                    title={isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
+                    title={isScreenSharing ? 'Stop Sharing Screen' : 'Share Screen'}
                   >
                     <Share2 size={16} className={isScreenSharing ? 'text-white' : 'text-slate-300'} />
-                    <span className="text-[8.5px] sm:text-[9.5px] font-bold mt-0.5 tracking-tight">
+                    <span className="text-[8.5px] sm:text-[9px] font-bold mt-0.5 tracking-tight truncate max-w-[48px]">
                       {isScreenSharing ? 'Sharing' : 'Share'}
                     </span>
                   </button>
@@ -2290,11 +2332,11 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                   <button
                     type="button"
                     onClick={() => setShowParticipantsModal(true)}
-                    className="flex flex-col items-center justify-center w-11 sm:w-14 md:w-16 h-11 sm:h-12 rounded-xl bg-slate-800/90 hover:bg-slate-750 text-slate-200 border border-slate-700 transition cursor-pointer relative"
+                    className="flex flex-col items-center justify-center w-11 sm:w-13 md:w-14 h-11 sm:h-12 rounded-xl bg-slate-800/90 hover:bg-slate-750 text-slate-200 border border-slate-700 transition cursor-pointer relative"
                     title="View Participants"
                   >
                     <Users size={16} className="text-purple-300" />
-                    <span className="text-[8.5px] sm:text-[9.5px] font-bold mt-0.5 tracking-tight">
+                    <span className="text-[8.5px] sm:text-[9px] font-bold mt-0.5 tracking-tight truncate max-w-[48px]">
                       People ({totalInRoom})
                     </span>
                   </button>
@@ -2306,11 +2348,11 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                       copyToClipboard(directAppMeetingLink, setCopiedAppUrl);
                       setShowInviteModal(true);
                     }}
-                    className="flex flex-col items-center justify-center w-11 sm:w-14 md:w-16 h-11 sm:h-12 rounded-xl bg-slate-800/90 hover:bg-slate-750 text-purple-300 border border-slate-700 transition cursor-pointer"
+                    className="flex flex-col items-center justify-center w-11 sm:w-13 md:w-14 h-11 sm:h-12 rounded-xl bg-slate-800/90 hover:bg-slate-750 text-purple-300 border border-slate-700 transition cursor-pointer"
                     title="Invite Attendees"
                   >
                     <UserPlus size={16} />
-                    <span className="text-[8.5px] sm:text-[9.5px] font-bold mt-0.5 tracking-tight">Invite</span>
+                    <span className="text-[8.5px] sm:text-[9px] font-bold mt-0.5 tracking-tight truncate max-w-[48px]">Invite</span>
                   </button>
 
                   {/* MoM BUTTON (PRIMARY ACTION) */}
@@ -2318,7 +2360,7 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                     <button
                       type="button"
                       onClick={() => setIsMoMOpen(!isMoMOpen)}
-                      className={`flex flex-col items-center justify-center w-11 sm:w-14 md:w-16 h-11 sm:h-12 rounded-xl transition cursor-pointer ${
+                      className={`flex flex-col items-center justify-center w-11 sm:w-13 md:w-14 h-11 sm:h-12 rounded-xl transition cursor-pointer ${
                         isMoMOpen
                           ? 'bg-purple-600 text-white shadow-lg shadow-purple-950/40 border border-purple-500 ring-2 ring-purple-400/30'
                           : 'bg-slate-800/90 hover:bg-slate-750 text-purple-300 border border-purple-500/30'
@@ -2326,7 +2368,7 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                       title={isMoMOpen ? 'Hide MoM Notes' : 'Open MoM Notes'}
                     >
                       <FileText size={16} />
-                      <span className="text-[8.5px] sm:text-[9.5px] font-extrabold mt-0.5 tracking-tight">MoM</span>
+                      <span className="text-[8.5px] sm:text-[9px] font-extrabold mt-0.5 tracking-tight truncate max-w-[48px]">MoM</span>
                     </button>
                   )}
                 </div>
@@ -2336,11 +2378,12 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                   <button
                     type="button"
                     onClick={onLeave}
-                    className="px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl font-extrabold bg-rose-600 hover:bg-rose-500 text-white text-xs flex items-center space-x-1.5 transition shadow-lg shadow-rose-950/50 cursor-pointer"
+                    className="px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 rounded-xl font-extrabold bg-rose-600 hover:bg-rose-500 text-white text-xs flex items-center space-x-1.5 transition shadow-lg shadow-rose-950/50 cursor-pointer"
+                    title="Leave or End Conference"
                   >
-                    <LogOut size={14} />
+                    <PhoneOff size={15} />
                     <span className="hidden sm:inline">End Call</span>
-                    <span className="sm:hidden">Leave</span>
+                    <span className="sm:hidden">End</span>
                   </button>
                 </div>
               </div>
@@ -2605,16 +2648,18 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
 
       {/* Invite Participants Modal */}
       {showInviteModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
-          <div className="max-w-md w-full p-5 rounded-2xl border border-slate-800 bg-slate-900 text-slate-100 shadow-2xl space-y-4">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
+          <div className="max-w-md w-full p-5 sm:p-6 rounded-2xl border border-slate-800 bg-[#111322] text-slate-100 shadow-2xl space-y-4">
+            
+            {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center space-x-2.5">
                 <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400">
-                  <UserPlus size={16} />
+                  <UserPlus size={18} />
                 </div>
                 <div>
                   <h3 className="text-sm font-bold tracking-tight">Invite Meeting Attendees</h3>
-                  <p className="text-[11px] text-zinc-400">Share direct link or dispatch email invitations</p>
+                  <p className="text-[11px] text-zinc-400">Share live Room ID or send real-time link</p>
                 </div>
               </div>
               <button
@@ -2626,60 +2671,98 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
               </button>
             </div>
 
-            <div className="space-y-4 text-xs max-h-[70vh] overflow-y-auto pr-1">
+            <div className="space-y-4 text-xs">
               
-              {/* Option 1: Direct In-App Meeting Link */}
-              <div className="space-y-1">
+              {/* 1. Real-Time Meeting ID / Room Code Card */}
+              <div className="p-3.5 rounded-xl bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-purple-950/40 border border-purple-500/30 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10.5px] uppercase font-bold tracking-wider text-purple-300">
+                    Live Meeting ID / Room Code
+                  </span>
+                  <span className="text-[10px] font-semibold text-emerald-400 flex items-center space-x-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Active Now</span>
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-mono text-sm sm:text-base font-extrabold text-white tracking-wide truncate select-all">
+                    {roomName}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(roomName, setCopiedRoomId)}
+                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer shrink-0 shadow-sm"
+                    title="Copy Meeting ID"
+                  >
+                    {copiedRoomId ? <Check size={13} className="text-emerald-300" /> : <Copy size={13} />}
+                    <span>{copiedRoomId ? 'Copied' : 'Copy ID'}</span>
+                  </button>
+                </div>
+                <p className="text-[10.5px] text-zinc-400 leading-tight">
+                  Anyone can enter this ID on the app to join your video session directly.
+                </p>
+              </div>
+
+              {/* 2. Direct In-App Join Link */}
+              <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="font-semibold text-zinc-300 flex items-center space-x-1.5">
-                    <Link2 size={13} className="text-purple-400" />
-                    <span>Direct In-App Meeting Link (Zero-Login Access)</span>
+                    <Link2 size={13} className="text-cyan-400" />
+                    <span>Direct Join URL (Zero-Login Access)</span>
                   </label>
-                  <span className="text-[10px] text-emerald-400 font-medium">Guests join instantly</span>
+                  <span className="text-[10px] text-emerald-400 font-medium">Instant Join</span>
                 </div>
                 <div className="flex items-center space-x-1.5 p-1.5 rounded-xl bg-slate-950 border border-slate-800">
                   <input
                     type="text"
                     readOnly
                     value={directAppMeetingLink}
-                    className="flex-1 bg-transparent border-none outline-none font-mono text-[11px] text-purple-300 px-1 truncate"
+                    className="flex-1 bg-transparent border-none outline-none font-mono text-[11px] text-purple-300 px-1 truncate select-all"
                   />
                   <button
                     type="button"
                     onClick={() => copyToClipboard(directAppMeetingLink, setCopiedAppUrl)}
-                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[11px] flex items-center space-x-1.5 transition cursor-pointer shrink-0"
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] flex items-center space-x-1.5 transition cursor-pointer shrink-0"
                   >
-                    {copiedAppUrl ? <Check size={13} /> : <Copy size={13} />}
+                    {copiedAppUrl ? <Check size={13} className="text-emerald-300" /> : <Copy size={13} />}
                     <span>{copiedAppUrl ? 'Copied' : 'Copy Link'}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Option 2: Full Formatted Meeting Invitation */}
-              <div className="space-y-1 pt-1 border-t border-slate-800/80">
-                <div className="flex items-center justify-between">
-                  <label className="font-semibold text-zinc-300 flex items-center space-x-1.5">
-                    <FileText size={13} className="text-blue-400" />
-                    <span>Full Invitation Summary</span>
-                  </label>
+              {/* 3. Send Real-Time Invite via Email */}
+              <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+                <label className="font-semibold text-zinc-300 flex items-center space-x-1.5">
+                  <Mail size={13} className="text-emerald-400" />
+                  <span>Send Real-Time Link via Email</span>
+                </label>
+                <form onSubmit={handleSendQuickInvite} className="flex items-center space-x-1.5">
+                  <input
+                    type="email"
+                    value={quickInviteEmail}
+                    onChange={(e) => setQuickInviteEmail(e.target.value)}
+                    placeholder="e.g. colleague@bankalhabib.com or guest@gmail.com"
+                    className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 outline-none focus:border-purple-500 placeholder-zinc-500"
+                  />
                   <button
-                    type="button"
-                    onClick={() => copyToClipboard(fullInvitationText, setCopiedFullInvite)}
-                    className="text-[10px] font-bold text-blue-400 hover:text-blue-300 flex items-center space-x-1 cursor-pointer"
+                    type="submit"
+                    disabled={isSendingQuickInvite || !quickInviteEmail.trim()}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer disabled:opacity-50 shrink-0 shadow-sm"
                   >
-                    {copiedFullInvite ? <Check size={11} /> : <Copy size={11} />}
-                    <span>{copiedFullInvite ? 'Copied Full Invitation' : 'Copy Invitation Text'}</span>
+                    {isSendingQuickInvite ? (
+                      <RefreshCw size={13} className="animate-spin" />
+                    ) : (
+                      <Send size={13} />
+                    )}
+                    <span>Send</span>
                   </button>
-                </div>
-                <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800/90 text-zinc-300 font-mono text-[10.5px] whitespace-pre-wrap leading-relaxed">
-                  {fullInvitationText}
-                </div>
+                </form>
               </div>
 
-              {/* Option 3: Quick Share Links (WhatsApp & Email App) */}
+              {/* 4. Instant Share to Apps */}
               <div className="pt-2 border-t border-slate-800/80">
                 <label className="block font-semibold mb-1.5 text-zinc-300">
-                  Quick Share to Channels
+                  Quick Share to Apps
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <a
@@ -2700,34 +2783,6 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                     <span>Email App</span>
                   </a>
                 </div>
-              </div>
-
-              {/* Option 4: Direct Corporate Dispatch */}
-              <div className="pt-2 border-t border-slate-800/80">
-                <label className="block font-semibold mb-1 text-zinc-300">
-                  Dispatch Email via Server (Gmail, Outlook, Yahoo, Bank)
-                </label>
-                <form onSubmit={handleSendQuickInvite} className="flex items-center space-x-1.5">
-                  <input
-                    type="email"
-                    value={quickInviteEmail}
-                    onChange={(e) => setQuickInviteEmail(e.target.value)}
-                    placeholder="e.g. auditor@bankalhabib.com or guest@gmail.com"
-                    className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 outline-none focus:border-purple-500"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isSendingQuickInvite || !quickInviteEmail.trim()}
-                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer disabled:opacity-50 shrink-0 shadow-sm"
-                  >
-                    {isSendingQuickInvite ? (
-                      <RefreshCw size={13} className="animate-spin" />
-                    ) : (
-                      <Send size={13} />
-                    )}
-                    <span>Send</span>
-                  </button>
-                </form>
               </div>
 
             </div>

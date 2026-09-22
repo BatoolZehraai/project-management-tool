@@ -2722,7 +2722,17 @@ def get_meeting_details(current_user, meeting_id):
 
 @app.route('/api/meetings/public/<string:room_name>', methods=['GET'])
 def get_public_meeting_info(room_name):
+    # 1. Try by exact room_name match
     meeting = Meeting.query.filter_by(room_name=room_name).first()
+    # 2. Try by numeric meeting ID
+    if not meeting and room_name.isdigit():
+        meeting = Meeting.query.get(int(room_name))
+    # 3. Try by trailing numeric ID if prefixed (e.g. bahl-sdlc-5)
+    if not meeting and '-' in room_name:
+        parts = room_name.split('-')
+        if parts[-1].isdigit():
+            meeting = Meeting.query.get(int(parts[-1]))
+            
     if not meeting:
         return jsonify({
             'id': 0,

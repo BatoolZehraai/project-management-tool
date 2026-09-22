@@ -64,6 +64,11 @@ export default function MeetingsView({
   const [isSendingShareEmail, setIsSendingShareEmail] = useState(false);
   const [copiedShareFull, setCopiedShareFull] = useState(false);
   const [copiedShareDirect, setCopiedShareDirect] = useState(false);
+  const [copiedShareRoomId, setCopiedShareRoomId] = useState(false);
+
+  // Join by ID Modal State
+  const [showJoinByIdModal, setShowJoinByIdModal] = useState(false);
+  const [joinMeetingInput, setJoinMeetingInput] = useState('');
 
   // View MoM Modal State
   const [selectedMoMMeeting, setSelectedMoMMeeting] = useState(null);
@@ -309,6 +314,60 @@ export default function MeetingsView({
     }
   };
 
+  const handleJoinByIdOrLink = async (e) => {
+    if (e) e.preventDefault();
+    const raw = joinMeetingInput.trim();
+    if (!raw) return;
+
+    let clean = raw;
+    if (clean.includes('/meet/')) {
+      clean = clean.split('/meet/')[1].split('?')[0].split('#')[0].trim();
+    } else if (clean.includes('meet=')) {
+      const match = clean.match(/meet=([^&]+)/);
+      if (match) clean = match[1].trim();
+    } else if (clean.includes('room=')) {
+      const match = clean.match(/room=([^&]+)/);
+      if (match) clean = match[1].trim();
+    }
+
+    // Check in locally loaded meetings
+    const localMatch = meetings.find(m => 
+      String(m.id) === clean ||
+      m.room_name === clean ||
+      m.room_name === `bahl-sdlc-${clean}` ||
+      clean.endsWith(String(m.id))
+    );
+    if (localMatch) {
+      setShowJoinByIdModal(false);
+      setJoinMeetingInput('');
+      if (onJoinMeeting) onJoinMeeting(localMatch);
+      return;
+    }
+
+    // Fetch from backend public endpoint
+    try {
+      const res = await axios.get(`${API_BASE}/meetings/public/${clean}`);
+      if (res.data) {
+        setShowJoinByIdModal(false);
+        setJoinMeetingInput('');
+        if (onJoinMeeting) onJoinMeeting(res.data);
+        return;
+      }
+    } catch (err) {
+      // Fallback
+    }
+
+    const dynamicMeeting = {
+      room_name: clean.startsWith('bahl-') ? clean : `bahl-${clean}`,
+      title: `Live Session (${clean})`,
+      phase_name: 'External Join',
+      status: 'IN_PROGRESS'
+    };
+    setShowJoinByIdModal(false);
+    setJoinMeetingInput('');
+    if (onJoinMeeting) onJoinMeeting(dynamicMeeting);
+  };
+
   const resetForm = () => {
     setTitle('');
     setSelectedPhaseId(activePhaseId !== 'ALL' ? activePhaseId : '');
@@ -386,6 +445,21 @@ export default function MeetingsView({
               <option key={ph.id} value={ph.id}>{ph.name}</option>
             ))}
           </select>
+
+          {/* Join Meeting by ID / Link */}
+          <button
+            type="button"
+            onClick={() => setShowJoinByIdModal(true)}
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+              isDarkMode
+                ? 'bg-cyan-950/30 border-cyan-800/50 text-cyan-300 hover:bg-cyan-900/40 hover:text-white'
+                : 'bg-cyan-50 border-cyan-200 text-cyan-700 hover:bg-cyan-100 shadow-xs'
+            }`}
+            title="Join an active meeting using its Room ID or Link"
+          >
+            <Link2 className="h-4 w-4 text-cyan-400" />
+            <span className="hidden sm:inline">Join by ID</span>
+          </button>
 
           {/* Start Instant Meeting */}
           <button
@@ -568,6 +642,24 @@ export default function MeetingsView({
                     <div className="flex items-center space-x-2 text-zinc-400">
                       <Clock3 className="h-3.5 w-3.5 text-purple-400 shrink-0" />
                       <span>{formattedDate} ({meeting.duration_minutes}m)</span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-zinc-400">
+                      <div className="flex items-center space-x-2 min-w-0">
+                        <Link2 className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                        <span className="truncate max-w-[140px] font-semibold text-zinc-300" title={meeting.room_name}>
+                          {meeting.room_name}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => copyTextToClipboard(meeting.room_name)}
+                        className="text-[10px] text-purple-400 hover:text-purple-300 font-bold flex items-center space-x-1 cursor-pointer"
+                        title="Copy Room ID"
+                      >
+                        <Copy size={11} />
+                        <span>Copy ID</span>
+                      </button>
                     </div>
 
                     <div className="flex items-center space-x-2 text-zinc-400">
@@ -1190,10 +1282,10 @@ export default function MeetingsView({
         const mailtoUrl = `mailto:?subject=${encodeURIComponent('Meeting Invitation: ' + sharingMeeting.title)}&body=${encodeURIComponent(fullInviteText)}`;
 
         return (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
+          <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
             <div
-              className={`max-w-lg w-full rounded-2xl border p-5 sm:p-6 shadow-2xl space-y-4 ${
-                isDarkMode ? 'bg-[#0f121d] border-zinc-800 text-zinc-100' : 'bg-white border-slate-200 text-slate-900'
+              className={`max-w-md w-full rounded-2xl border p-5 sm:p-6 shadow-2xl space-y-4 ${
+                isDarkMode ? 'bg-[#111322] border-zinc-800 text-zinc-100' : 'bg-white border-slate-200 text-slate-900'
               }`}
             >
               {/* Modal Header */}
@@ -1204,7 +1296,7 @@ export default function MeetingsView({
                   </div>
                   <div>
                     <h3 className="text-sm font-bold">Share Meeting Invitation</h3>
-                    <p className="text-[11px] text-zinc-400">Anyone with this link can join the meeting</p>
+                    <p className="text-[11px] text-zinc-400">Share live Room ID or send real-time link</p>
                   </div>
                 </div>
                 <button
@@ -1216,65 +1308,91 @@ export default function MeetingsView({
                 </button>
               </div>
 
-              {/* Meeting Info Summary */}
-              <div className={`p-3 rounded-xl border text-xs space-y-1 ${
-                isDarkMode ? 'bg-[#151828] border-zinc-800' : 'bg-slate-50 border-slate-200'
-              }`}>
+              {/* 1. Real-Time Room ID / Meeting Code Card */}
+              <div className="p-3.5 rounded-xl bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-purple-950/40 border border-purple-500/30 space-y-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-100">{sharingMeeting.title}</span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950/50 border border-purple-800/40 text-purple-300">
+                  <span className="text-[10.5px] uppercase font-bold tracking-wider text-purple-300">
+                    Live Meeting ID / Room Code
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950/60 border border-purple-800/50 text-purple-300">
                     {sharingMeeting.phase_name || 'All Stages'}
                   </span>
                 </div>
-                <p className="text-zinc-400 text-[11px] font-mono">{formattedDate} ({sharingMeeting.duration_minutes}m)</p>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-mono text-sm sm:text-base font-extrabold text-white tracking-wide truncate select-all">
+                    {sharingMeeting.room_name}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyTextToClipboard(sharingMeeting.room_name, setCopiedShareRoomId)}
+                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer shrink-0 shadow-sm"
+                    title="Copy Meeting ID"
+                  >
+                    {copiedShareRoomId ? <Check size={13} className="text-emerald-300" /> : <Copy size={13} />}
+                    <span>{copiedShareRoomId ? 'Copied' : 'Copy ID'}</span>
+                  </button>
+                </div>
+                <p className="text-[10.5px] text-zinc-400 leading-tight">
+                  {sharingMeeting.title} &bull; {formattedDate} ({sharingMeeting.duration_minutes}m)
+                </p>
               </div>
 
-              {/* Direct Link */}
+              {/* 2. Direct Join URL */}
               <div className="space-y-1.5 text-xs">
                 <label className="font-semibold text-zinc-300 flex items-center justify-between">
-                  <span>Direct Meeting URL</span>
-                  <span className="text-[10px] text-emerald-400">Zero-login guest access</span>
+                  <span className="flex items-center space-x-1.5">
+                    <Link2 size={13} className="text-cyan-400" />
+                    <span>Direct Meeting URL (Zero-Login Access)</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-medium">Instant Join</span>
                 </label>
                 <div className="flex items-center space-x-1.5 p-1.5 rounded-xl bg-slate-950 border border-slate-800">
                   <input
                     type="text"
                     readOnly
                     value={directLink}
-                    className="flex-1 bg-transparent border-none outline-none font-mono text-[11px] text-purple-300 px-1 truncate"
+                    className="flex-1 bg-transparent border-none outline-none font-mono text-[11px] text-purple-300 px-1 truncate select-all"
                   />
                   <button
                     type="button"
                     onClick={() => copyTextToClipboard(directLink, setCopiedShareDirect)}
-                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[11px] flex items-center space-x-1 transition cursor-pointer shrink-0"
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] flex items-center space-x-1 transition cursor-pointer shrink-0"
                   >
-                    {copiedShareDirect ? <Check size={12} /> : <Copy size={12} />}
+                    {copiedShareDirect ? <Check size={12} className="text-emerald-300" /> : <Copy size={12} />}
                     <span>{copiedShareDirect ? 'Copied' : 'Copy Link'}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Full Invitation Preview & Copy */}
-              <div className="space-y-1.5 text-xs pt-1 border-t border-inherit">
-                <div className="flex items-center justify-between">
-                  <label className="font-semibold text-zinc-300">Full Invitation Template</label>
+              {/* 3. Send Real-Time Invite via Email */}
+              <div className="space-y-1.5 pt-2 border-t border-inherit text-xs">
+                <label className="font-semibold text-zinc-300 flex items-center space-x-1.5">
+                  <Mail size={13} className="text-emerald-400" />
+                  <span>Send Real-Time Link via Email</span>
+                </label>
+                <form onSubmit={handleDispatchShareEmail} className="flex items-center space-x-1.5">
+                  <input
+                    type="email"
+                    value={shareQuickEmail}
+                    onChange={(e) => setShareQuickEmail(e.target.value)}
+                    placeholder="e.g. auditor@bankalhabib.com or user@gmail.com"
+                    className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 outline-none focus:border-purple-500 placeholder-zinc-500"
+                  />
                   <button
-                    type="button"
-                    onClick={() => copyTextToClipboard(fullInviteText, setCopiedShareFull)}
-                    className="text-[11px] font-bold text-blue-400 hover:text-blue-300 flex items-center space-x-1 cursor-pointer"
+                    type="submit"
+                    disabled={isSendingShareEmail || !shareQuickEmail.trim()}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer disabled:opacity-50 shrink-0 shadow-sm"
                   >
-                    {copiedShareFull ? <Check size={12} /> : <Copy size={12} />}
-                    <span>{copiedShareFull ? 'Copied Invitation' : 'Copy Full Text'}</span>
+                    {isSendingShareEmail ? <RefreshCw size={12} className="animate-spin" /> : <Send size={12} />}
+                    <span>Send</span>
                   </button>
-                </div>
-                <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800/90 text-zinc-300 font-mono text-[10.5px] whitespace-pre-wrap leading-relaxed max-h-28 overflow-y-auto">
-                  {fullInviteText}
-                </div>
+                </form>
               </div>
 
-              {/* Channels (WhatsApp & Email App) */}
-              <div className="pt-1 border-t border-inherit">
-                <label className="block text-xs font-semibold mb-1.5 text-zinc-300">
-                  Share via Messaging & Mail Apps
+              {/* 4. Channels (WhatsApp & Email App) */}
+              <div className="pt-2 border-t border-inherit text-xs">
+                <label className="block font-semibold mb-1.5 text-zinc-300">
+                  Quick Share to Apps
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <a
@@ -1297,44 +1415,94 @@ export default function MeetingsView({
                 </div>
               </div>
 
-              {/* Dispatch Email via Server */}
-              <div className="pt-1 border-t border-inherit text-xs">
-                <label className="block font-semibold mb-1 text-zinc-300">
-                  Send Direct Invite (Any Email)
-                </label>
-                <form onSubmit={handleDispatchShareEmail} className="flex items-center space-x-1.5">
-                  <input
-                    type="email"
-                    value={shareQuickEmail}
-                    onChange={(e) => setShareQuickEmail(e.target.value)}
-                    placeholder="e.g. auditor@bankalhabib.com or user@gmail.com"
-                    className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 outline-none focus:border-purple-500"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isSendingShareEmail || !shareQuickEmail.trim()}
-                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer disabled:opacity-50 shrink-0"
-                  >
-                    {isSendingShareEmail ? <RefreshCw size={12} className="animate-spin" /> : <Send size={12} />}
-                    <span>Dispatch</span>
-                  </button>
-                </form>
-              </div>
-
               {/* Close Button */}
               <div className="flex items-center justify-end pt-2 border-t border-inherit">
                 <button
                   type="button"
                   onClick={() => setSharingMeeting(null)}
-                  className="px-4 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-white transition cursor-pointer"
+                  className="px-4 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-750 text-white transition cursor-pointer"
                 >
-                  Done
+                  Close
                 </button>
               </div>
             </div>
           </div>
         );
       })()}
+
+      {/* JOIN MEETING BY ID / CODE MODAL */}
+      {showJoinByIdModal && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
+          <div
+            className={`max-w-md w-full rounded-2xl border p-5 sm:p-6 shadow-2xl space-y-4 ${
+              isDarkMode ? 'bg-[#111322] border-zinc-800 text-zinc-100' : 'bg-white border-slate-200 text-slate-900'
+            }`}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-inherit">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+                  <Link2 size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold">Join Meeting by ID or Code</h3>
+                  <p className="text-[11px] text-zinc-400">Enter a Room Code, ID, or direct URL to connect</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowJoinByIdModal(false)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleJoinByIdOrLink} className="space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <label className="font-semibold text-zinc-300">
+                  Meeting ID / Room Code or Link
+                </label>
+                <input
+                  type="text"
+                  value={joinMeetingInput}
+                  onChange={(e) => setJoinMeetingInput(e.target.value)}
+                  placeholder="e.g. bahl-sdlc-10, 10, or http://.../meet/..."
+                  required
+                  autoFocus
+                  className={`w-full px-3.5 py-2.5 rounded-xl border font-mono text-xs outline-none transition ${
+                    isDarkMode
+                      ? 'bg-slate-950 border-zinc-750 text-purple-300 focus:border-cyan-500 placeholder-zinc-600'
+                      : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-cyan-500 placeholder-slate-400'
+                  }`}
+                />
+                <p className="text-[10.5px] text-zinc-500">
+                  Paste the full invite link or type the Room Code to jump directly into the live call.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-inherit">
+                <button
+                  type="button"
+                  onClick={() => setShowJoinByIdModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!joinMeetingInput.trim()}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white transition flex items-center space-x-1.5 shadow-md cursor-pointer disabled:opacity-50"
+                >
+                  <Video size={14} />
+                  <span>Connect & Join Call</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

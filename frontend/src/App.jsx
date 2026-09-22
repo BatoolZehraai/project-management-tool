@@ -122,7 +122,21 @@ export default function App() {
 
   // Active Workspace Tab Navigation
   // Options: 'overview' | 'board' | 'planner' | 'stage_files' | 'bug_tracker' | 'api_studio' | 'meetings' | 'team_approvals' | 'audit_trail'
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const pathname = window.location.pathname;
+      const params = new URLSearchParams(window.location.search);
+      if (
+        pathname === '/meetings' ||
+        pathname.startsWith('/meetings') ||
+        params.get('room') ||
+        params.get('tab') === 'meetings'
+      ) {
+        return 'meetings';
+      }
+    }
+    return 'overview';
+  });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeMeeting, setActiveMeeting] = useState(null);
   const [directMeetRoomId, setDirectMeetRoomId] = useState(() => {

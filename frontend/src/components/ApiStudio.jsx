@@ -716,68 +716,54 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
       {/* ========================================================================= */}
       {/* 1. RESPONSIVE TOOLBAR HEADER                                              */}
       {/* ========================================================================= */}
-      <header className={`min-h-14 py-2 px-3 sm:px-4 border-b flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 sm:gap-3 sticky top-0 z-30 transition-colors ${
+      <header className={`py-2.5 px-3 sm:px-4 border-b flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5 sm:gap-3 sticky top-0 z-30 transition-colors ${
         isDarkMode ? 'bg-slate-900/95 border-slate-800/80 backdrop-blur-md' : 'bg-white/95 border-slate-200/90 backdrop-blur-md shadow-sm'
       }`}>
         
-        {/* Left: Navigation & Studio Title */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          <button
-            onClick={onBack}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all shrink-0 ${
-              isDarkMode 
-                ? 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white hover:border-slate-600' 
-                : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
-            }`}
-            title="Return to Kanban Board"
-          >
-            <ArrowLeft size={15} />
-            <span className="hidden sm:inline">Back</span>
-          </button>
-        </div>
+        {/* Top Row on Mobile / Left Group on Desktop */}
+        <div className="flex items-center justify-between lg:justify-start gap-2 sm:gap-3">
+          {/* Navigation & Studio Title */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onBack}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all shrink-0 ${
+                isDarkMode 
+                  ? 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white hover:border-slate-600' 
+                  : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
+              }`}
+              title="Return to Kanban Board"
+            >
+              <ArrowLeft size={14} />
+              <span className="hidden xs:inline sm:inline">Back</span>
+            </button>
 
-        {/* Center: Clean Project & Custom Environment Selectors */}
-        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1 justify-center max-w-xl">
-          {/* Project Selector */}
-          {projects && projects.length > 0 && onSelectProject && (
-            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs ${
-              isDarkMode ? 'bg-slate-800/70 border-slate-700/80 text-slate-300' : 'bg-slate-100/90 border-slate-200 text-slate-700'
-            }`}>
-              <FolderGit2 size={14} className="text-purple-400 shrink-0" />
-              <select
-                id="api-project-select"
-                value={projectId}
-                onChange={(e) => onSelectProject(Number(e.target.value))}
-                className="bg-transparent border-none focus:outline-none text-xs font-semibold cursor-pointer max-w-[130px] sm:max-w-[190px] truncate"
-              >
-                {projects.map(p => (
-                  <option key={p.id} value={p.id} className={isDarkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-slate-800'}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+            <div className="flex items-center gap-1.5">
+              <div className="p-1 rounded-lg bg-purple-600/20 text-purple-400 border border-purple-500/30 shrink-0">
+                <Terminal size={14} />
+              </div>
+              <span className="font-extrabold text-xs sm:text-sm tracking-tight">API Studio</span>
             </div>
-          )}
+          </div>
 
-          {/* Custom Popover Environment Selector (High Visibility & Clean Theme) */}
+          {/* Environment Selector Dropdown */}
           <div className="relative" ref={envDropdownRef}>
             <button
               id="api-environment-btn"
               onClick={() => setIsEnvDropdownOpen(!isEnvDropdownOpen)}
-              className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
                 isDarkMode 
                   ? 'bg-slate-800/80 border-slate-700 text-slate-200 hover:bg-slate-800 hover:border-slate-600' 
                   : 'bg-slate-100 border-slate-200 text-slate-800 hover:bg-slate-200'
               }`}
             >
-              <Globe size={14} className="text-emerald-400 shrink-0" />
-              <span className="max-w-[110px] sm:max-w-[150px] truncate">{activeEnv?.name || 'Local Backend'}</span>
-              <ChevronDown size={13} className={`text-slate-400 shrink-0 transition-transform ${isEnvDropdownOpen ? 'rotate-180' : ''}`} />
+              <Globe size={13} className="text-emerald-400 shrink-0" />
+              <span className="max-w-[100px] xs:max-w-[130px] sm:max-w-[150px] truncate">{activeEnv?.name || 'Local Backend'}</span>
+              <ChevronDown size={12} className={`text-slate-400 shrink-0 transition-transform ${isEnvDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {/* Floating Dropdown Popover */}
             {isEnvDropdownOpen && (
-              <div className={`absolute left-0 mt-1.5 w-64 rounded-xl border shadow-2xl p-1.5 z-50 animate-fade-in ${
+              <div className={`absolute right-0 lg:left-0 mt-1.5 w-64 rounded-xl border shadow-2xl p-1.5 z-50 animate-fade-in ${
                 isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
               }`}>
                 {/* Standard Environments Group */}
@@ -836,14 +822,14 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                               {isSelected && <Check size={13} className="text-emerald-400 shrink-0" />}
                               <button
                                 onClick={(e) => handleOpenEditEnvModal(env, e)}
-                                className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-slate-700/50 text-slate-400 hover:text-white transition-all"
+                                className="p-1 rounded hover:bg-slate-700/50 text-slate-400 hover:text-white transition-all"
                                 title="Edit environment"
                               >
                                 <Edit2 size={11} />
                               </button>
                               <button
                                 onClick={(e) => handleDeleteCustomEnv(env.id, e)}
-                                className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-rose-950/50 text-slate-400 hover:text-rose-400 transition-all"
+                                className="p-1 rounded hover:bg-rose-950/50 text-slate-400 hover:text-rose-400 transition-all"
                                 title="Delete environment"
                               >
                                 <Trash2 size={11} />
@@ -875,51 +861,53 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
           </div>
         </div>
 
-        {/* Right: Actions Toolbar */}
-        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Snippets Drawer Toggle Button */}
-          <button
-            onClick={() => setShowSnippetDrawer(true)}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-              isDarkMode 
-                ? 'bg-purple-950/40 border-purple-800/60 text-purple-300 hover:bg-purple-900/60 hover:text-purple-100' 
-                : 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100'
-            }`}
-            title="Open Banking Payloads & Code Snippets Drawer"
-          >
-            <BookOpen size={14} className="text-purple-400 shrink-0" />
-            <span className="hidden sm:inline">Snippets</span>
-          </button>
+        {/* Bottom Row on Mobile / Right Group on Desktop */}
+        <div className="flex items-center justify-between lg:justify-end gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-1.5">
+            {/* Snippets Drawer Toggle Button */}
+            <button
+              onClick={() => setShowSnippetDrawer(true)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                isDarkMode 
+                  ? 'bg-purple-950/40 border-purple-800/60 text-purple-300 hover:bg-purple-900/60 hover:text-purple-100' 
+                  : 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100'
+              }`}
+              title="Open Banking Payloads & Code Snippets Drawer"
+            >
+              <BookOpen size={13} className="text-purple-400 shrink-0" />
+              <span>Snippets</span>
+            </button>
 
-          {/* Reset Pipeline */}
-          <button
-            onClick={handleResetPipeline}
-            disabled={isLoadingPipeline || isPipelineRunning}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-              isDarkMode 
-                ? 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-800' 
-                : 'bg-slate-100 border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-200'
-            }`}
-            title="Reset to default pipeline template"
-          >
-            <RotateCcw size={14} className={`shrink-0 ${isLoadingPipeline ? 'animate-spin' : ''}`} />
-            <span className="hidden md:inline">Reset</span>
-          </button>
+            {/* Reset Pipeline */}
+            <button
+              onClick={handleResetPipeline}
+              disabled={isLoadingPipeline || isPipelineRunning}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                isDarkMode 
+                  ? 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-800' 
+                  : 'bg-slate-100 border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+              }`}
+              title="Reset to default pipeline template"
+            >
+              <RotateCcw size={13} className={`shrink-0 ${isLoadingPipeline ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Reset</span>
+            </button>
 
-          {/* Save Pipeline */}
-          <button
-            onClick={() => handleSavePipeline()}
-            disabled={isSavingPipeline || isPipelineRunning}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-              isDarkMode 
-                ? 'bg-slate-800/80 border-slate-700 text-slate-200 hover:bg-slate-800' 
-                : 'bg-slate-100 border-slate-200 text-slate-800 hover:bg-slate-200'
-            }`}
-            title="Save Pipeline configuration"
-          >
-            <Save size={14} className={`shrink-0 ${isSavingPipeline ? 'animate-spin' : 'text-purple-400'}`} />
-            <span className="hidden sm:inline">Save Pipeline</span>
-          </button>
+            {/* Save Pipeline */}
+            <button
+              onClick={() => handleSavePipeline()}
+              disabled={isSavingPipeline || isPipelineRunning}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                isDarkMode 
+                  ? 'bg-slate-800/80 border-slate-700 text-slate-200 hover:bg-slate-800' 
+                  : 'bg-slate-100 border-slate-200 text-slate-800 hover:bg-slate-200'
+              }`}
+              title="Save Pipeline configuration"
+            >
+              <Save size={13} className={`shrink-0 ${isSavingPipeline ? 'animate-spin' : 'text-purple-400'}`} />
+              <span className="hidden xs:inline sm:inline">Save</span>
+            </button>
+          </div>
 
           {/* Run Chained Pipeline Button */}
           <button
@@ -930,7 +918,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
               }
             }}
             disabled={isPipelineRunning || steps.length === 0}
-            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold text-white shadow-md transition-all active:scale-95 shrink-0 ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-md transition-all active:scale-95 shrink-0 ${
               isPipelineRunning
                 ? 'bg-purple-800 cursor-not-allowed opacity-80'
                 : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-600/25'
@@ -938,13 +926,13 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
           >
             {isPipelineRunning ? (
               <>
-                <RefreshCw size={14} className="animate-spin shrink-0" />
+                <RefreshCw size={13} className="animate-spin shrink-0" />
                 <span>Running ({pipelineProgress.current}/{pipelineProgress.total})</span>
               </>
             ) : (
               <>
-                <Play size={14} className="fill-white shrink-0" />
-                <span><span className="hidden md:inline">Run Chained </span>Pipeline</span>
+                <Play size={13} className="fill-white shrink-0" />
+                <span>Run Pipeline</span>
               </>
             )}
           </button>
@@ -972,8 +960,8 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
       )}
 
       {/* Responsive Mobile / Tablet Tab Selector (only visible on < lg screens) */}
-      <div className={`lg:hidden px-3 py-2 border-b flex items-center justify-between gap-1 shrink-0 ${
-        isDarkMode ? 'bg-slate-900/80 border-slate-800' : 'bg-slate-100 border-slate-200'
+      <div className={`lg:hidden px-2.5 py-1.5 border-b sticky top-[95px] xs:top-[56px] z-20 shrink-0 ${
+        isDarkMode ? 'bg-slate-900/95 border-slate-800/90 backdrop-blur-md' : 'bg-slate-100/95 border-slate-200/90 backdrop-blur-md shadow-xs'
       }`}>
         <div className="grid grid-cols-3 gap-1.5 w-full max-w-md mx-auto">
           <button
@@ -981,8 +969,8 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
             onClick={() => setMobileView('steps')}
             className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
               mobileView === 'steps'
-                ? isDarkMode ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-700 shadow-sm'
-                : isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+                ? isDarkMode ? 'bg-purple-600 text-white shadow-md' : 'bg-white text-purple-700 shadow-sm border border-purple-200'
+                : isDarkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
             }`}
           >
             <Layers size={13} />
@@ -994,8 +982,8 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
             onClick={() => setMobileView('request')}
             className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
               mobileView === 'request'
-                ? isDarkMode ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-700 shadow-sm'
-                : isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+                ? isDarkMode ? 'bg-purple-600 text-white shadow-md' : 'bg-white text-purple-700 shadow-sm border border-purple-200'
+                : isDarkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
             }`}
           >
             <Code2 size={13} />
@@ -1007,8 +995,8 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
             onClick={() => setMobileView('response')}
             className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
               mobileView === 'response'
-                ? isDarkMode ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-700 shadow-sm'
-                : isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+                ? isDarkMode ? 'bg-purple-600 text-white shadow-md' : 'bg-white text-purple-700 shadow-sm border border-purple-200'
+                : isDarkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
             }`}
           >
             <Terminal size={13} />
@@ -1138,15 +1126,15 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                         )}
                       </div>
 
-                      {/* Reorder & Delete controls */}
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {/* Reorder & Delete controls (Always visible on mobile touch screens) */}
+                      <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={(e) => handleMoveStep(idx, idx - 1, e)}
                           disabled={idx === 0}
                           className="p-1 rounded hover:bg-slate-700/50 disabled:opacity-30"
                           title="Move step up"
                         >
-                          <ArrowUp size={11} />
+                          <ArrowUp size={12} />
                         </button>
                         <button
                           onClick={(e) => handleMoveStep(idx, idx + 1, e)}
@@ -1154,14 +1142,14 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                           className="p-1 rounded hover:bg-slate-700/50 disabled:opacity-30"
                           title="Move step down"
                         >
-                          <ArrowDown size={11} />
+                          <ArrowDown size={12} />
                         </button>
                         <button
                           onClick={(e) => handleDeleteStep(idx, e)}
                           className="p-1 rounded hover:bg-rose-900/40 text-slate-400 hover:text-rose-400"
                           title="Delete step"
                         >
-                          <Trash2 size={11} />
+                          <Trash2 size={12} />
                         </button>
                       </div>
                     </div>
@@ -1237,7 +1225,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
             mobileView === 'request' ? 'flex' : 'hidden lg:flex'
           }`}>
             {/* Step Header Bar */}
-            <div className={`p-3 border-b flex items-center justify-between gap-2 ${
+            <div className={`p-2.5 sm:p-3 border-b flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 ${
               isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-50 border-slate-200'
             }`}>
               <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -1248,7 +1236,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                   type="text"
                   value={activeStep.name}
                   onChange={(e) => handleUpdateActiveStep({ name: e.target.value })}
-                  className={`text-xs font-bold px-2 py-1 rounded border flex-1 ${
+                  className={`text-xs font-bold px-2.5 py-1.5 rounded-lg border flex-1 min-w-0 ${
                     isDarkMode 
                       ? 'bg-slate-900 border-slate-700 text-white focus:border-purple-500' 
                       : 'bg-white border-slate-300 text-slate-900 focus:border-purple-500'
@@ -1256,45 +1244,48 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                 />
               </div>
 
-              <span className="text-[10px] font-mono text-slate-500 shrink-0">
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800/80 text-slate-400 border border-slate-700/60 shrink-0">
                 ID: {activeStep.id}
               </span>
             </div>
 
-            {/* URL Input Bar */}
-            <div className="p-2.5 sm:p-3 border-b border-slate-800/80 flex flex-wrap sm:flex-nowrap items-center gap-2">
-              <select
-                value={activeStep.method}
-                onChange={(e) => handleUpdateActiveStep({ method: e.target.value })}
-                className={`text-xs font-bold px-2.5 py-2 rounded-lg border focus:outline-none shrink-0 ${METHOD_COLORS[activeStep.method]?.bg}`}
-              >
-                {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => (
-                  <option key={m} value={m} className={isDarkMode ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'}>
-                    {m}
-                  </option>
-                ))}
-              </select>
+            {/* URL Input Bar (Responsive on Mobile) */}
+            <div className="p-2.5 sm:p-3 border-b border-slate-800/80 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
+                <select
+                  value={activeStep.method}
+                  onChange={(e) => handleUpdateActiveStep({ method: e.target.value })}
+                  className={`text-xs font-bold px-2.5 py-2 rounded-lg border focus:outline-none shrink-0 ${METHOD_COLORS[activeStep.method]?.bg}`}
+                >
+                  {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => (
+                    <option key={m} value={m} className={isDarkMode ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
 
-              <div className="flex-1 min-w-[140px] relative">
-                <input
-                  type="text"
-                  value={activeStep.url}
-                  onChange={(e) => handleUpdateActiveStep({ url: e.target.value })}
-                  placeholder="{{baseUrl}}/api/endpoint"
-                  className={`w-full text-xs font-mono px-3 py-2 rounded-lg border focus:outline-none ${
-                    isDarkMode 
-                      ? 'bg-slate-900/90 border-slate-700 text-slate-100 focus:border-purple-500' 
-                      : 'bg-white border-slate-300 text-slate-900 focus:border-purple-500'
-                  }`}
-                />
+                <div className="flex-1 min-w-0 relative">
+                  <input
+                    type="text"
+                    value={activeStep.url}
+                    onChange={(e) => handleUpdateActiveStep({ url: e.target.value })}
+                    placeholder="{{baseUrl}}/api/endpoint"
+                    className={`w-full text-xs font-mono px-3 py-2 rounded-lg border focus:outline-none truncate ${
+                      isDarkMode 
+                        ? 'bg-slate-900/90 border-slate-700 text-slate-100 focus:border-purple-500' 
+                        : 'bg-white border-slate-300 text-slate-900 focus:border-purple-500'
+                    }`}
+                  />
+                </div>
               </div>
 
+              {/* Action Buttons: cURL and Send */}
               <div className="flex items-center gap-1.5 shrink-0">
                 {/* Copy as cURL Button */}
                 <button
                   type="button"
                   onClick={handleCopyCurl}
-                  className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${
                     isDarkMode
                       ? 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'
                       : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
@@ -1314,7 +1305,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                     }
                   }}
                   disabled={activeStepExec.isExecuting || isPipelineRunning}
-                  className={`flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-lg text-xs font-bold text-white transition-all shadow-sm ${
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold text-white transition-all shadow-sm ${
                     activeStepExec.isExecuting
                       ? 'bg-purple-800 opacity-80'
                       : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/20 active:scale-95'
@@ -1331,7 +1322,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
             </div>
 
             {/* Config Tabs: Body | Headers | Params | Variable Extraction */}
-            <div className={`flex items-center gap-1 px-2 sm:px-3 border-b text-xs font-semibold overflow-x-auto whitespace-nowrap ${
+            <div className={`flex items-center gap-1 px-2 sm:px-3 border-b text-xs font-semibold overflow-x-auto whitespace-nowrap scrollbar-none ${
               isDarkMode ? 'border-slate-800 bg-slate-900/30' : 'border-slate-200 bg-slate-100/50'
             }`}>
               {[
@@ -1359,8 +1350,8 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
               {/* TAB 1: BODY */}
               {activeTab === 'body' && (
                 <div className="flex flex-col h-full gap-2">
-                  <div className="flex items-center justify-between text-[11px] text-slate-400">
-                    <span>JSON (application/json) with interpolation support:</span>
+                  <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-400">
+                    <span>JSON with interpolation support:</span>
                     <button
                       onClick={() => {
                         try {
@@ -1377,8 +1368,8 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                     value={activeStep.body || ''}
                     onChange={(e) => handleUpdateActiveStep({ body: e.target.value })}
                     placeholder={'{\n  "key": "value",\n  "token": "{{step1_token}}"\n}'}
-                    rows={14}
-                    className={`w-full flex-1 p-3 rounded-xl font-mono text-xs border resize-none focus:outline-none ${
+                    rows={12}
+                    className={`w-full min-h-[220px] flex-1 p-3 rounded-xl font-mono text-xs border resize-none focus:outline-none ${
                       isDarkMode 
                         ? 'bg-slate-900/90 border-slate-800 text-slate-200 focus:border-purple-500' 
                         : 'bg-white border-slate-300 text-slate-900 focus:border-purple-500'
@@ -1387,10 +1378,10 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                 </div>
               )}
 
-              {/* TAB 2: HEADERS */}
+              {/* TAB 2: HEADERS (Mobile Responsive Cards & Desktop Rows) */}
               {activeTab === 'headers' && (
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between mb-1">
+                <div className="flex flex-col gap-2.5">
+                  <div className="flex items-center justify-between mb-0.5">
                     <span className="text-[11px] font-semibold text-slate-400">HTTP Headers</span>
                     <button
                       onClick={() => {
@@ -1405,61 +1396,79 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                   </div>
 
                   {(activeStep.headers || []).map((h, hIdx) => (
-                    <div key={h.id || hIdx} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={h.enabled}
-                        onChange={(e) => {
-                          const updated = [...activeStep.headers];
-                          updated[hIdx].enabled = e.target.checked;
-                          handleUpdateActiveStep({ headers: updated });
-                        }}
-                        className="rounded border-slate-700 text-purple-600 focus:ring-purple-500 shrink-0"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Header Key (e.g. Authorization)"
-                        value={h.key}
-                        onChange={(e) => {
-                          const updated = [...activeStep.headers];
-                          updated[hIdx].key = e.target.value;
-                          handleUpdateActiveStep({ headers: updated });
-                        }}
-                        className={`flex-1 min-w-[120px] text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
-                          isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
-                        }`}
-                      />
-                      <input
-                        type="text"
-                        placeholder="Header Value (e.g. Bearer {{step1_token}})"
-                        value={h.value}
-                        onChange={(e) => {
-                          const updated = [...activeStep.headers];
-                          updated[hIdx].value = e.target.value;
-                          handleUpdateActiveStep({ headers: updated });
-                        }}
-                        className={`flex-1 min-w-[120px] text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
-                          isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
-                        }`}
-                      />
-                      <button
-                        onClick={() => {
-                          const updated = activeStep.headers.filter((_, idx) => idx !== hIdx);
-                          handleUpdateActiveStep({ headers: updated });
-                        }}
-                        className="p-1 rounded text-slate-500 hover:text-rose-400 shrink-0"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                    <div key={h.id || hIdx} className={`p-2.5 rounded-xl border flex flex-col sm:flex-row sm:items-center gap-2 ${
+                      isDarkMode ? 'bg-slate-900/50 border-slate-800/90' : 'bg-slate-50 border-slate-200'
+                    }`}>
+                      {/* Top row on mobile / Left group on desktop */}
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={h.enabled}
+                          onChange={(e) => {
+                            const updated = [...activeStep.headers];
+                            updated[hIdx].enabled = e.target.checked;
+                            handleUpdateActiveStep({ headers: updated });
+                          }}
+                          className="rounded border-slate-700 text-purple-600 focus:ring-purple-500 shrink-0"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Header Key (e.g. Authorization)"
+                          value={h.key}
+                          onChange={(e) => {
+                            const updated = [...activeStep.headers];
+                            updated[hIdx].key = e.target.value;
+                            handleUpdateActiveStep({ headers: updated });
+                          }}
+                          className={`flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border focus:outline-none ${
+                            isDarkMode ? 'bg-slate-950 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
+                          }`}
+                        />
+                        <button
+                          onClick={() => {
+                            const updated = activeStep.headers.filter((_, idx) => idx !== hIdx);
+                            handleUpdateActiveStep({ headers: updated });
+                          }}
+                          className="p-1 rounded text-slate-500 hover:text-rose-400 shrink-0 sm:hidden"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+
+                      {/* Value Input */}
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <input
+                          type="text"
+                          placeholder="Header Value (e.g. Bearer {{step1_token}})"
+                          value={h.value}
+                          onChange={(e) => {
+                            const updated = [...activeStep.headers];
+                            updated[hIdx].value = e.target.value;
+                            handleUpdateActiveStep({ headers: updated });
+                          }}
+                          className={`flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border focus:outline-none ${
+                            isDarkMode ? 'bg-slate-950 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
+                          }`}
+                        />
+                        <button
+                          onClick={() => {
+                            const updated = activeStep.headers.filter((_, idx) => idx !== hIdx);
+                            handleUpdateActiveStep({ headers: updated });
+                          }}
+                          className="hidden sm:block p-1 rounded text-slate-500 hover:text-rose-400 shrink-0"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* TAB 3: PARAMS */}
+              {/* TAB 3: PARAMS (Mobile Responsive Cards & Desktop Rows) */}
               {activeTab === 'params' && (
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between mb-1">
+                <div className="flex flex-col gap-2.5">
+                  <div className="flex items-center justify-between mb-0.5">
                     <span className="text-[11px] font-semibold text-slate-400">Query Parameters</span>
                     <button
                       onClick={() => {
@@ -1474,55 +1483,71 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                   </div>
 
                   {(!activeStep.params || activeStep.params.length === 0) ? (
-                    <div className="text-xs text-slate-500 italic py-4 text-center">No query parameters defined.</div>
+                    <div className="text-xs text-slate-500 italic py-6 text-center">No query parameters defined.</div>
                   ) : (
                     activeStep.params.map((p, pIdx) => (
-                      <div key={p.id || pIdx} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={p.enabled}
-                          onChange={(e) => {
-                            const updated = [...activeStep.params];
-                            updated[pIdx].enabled = e.target.checked;
-                            handleUpdateActiveStep({ params: updated });
-                          }}
-                          className="rounded border-slate-700 text-purple-600 focus:ring-purple-500 shrink-0"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Param Key"
-                          value={p.key}
-                          onChange={(e) => {
-                            const updated = [...activeStep.params];
-                            updated[pIdx].key = e.target.value;
-                            handleUpdateActiveStep({ params: updated });
-                          }}
-                          className={`flex-1 min-w-[120px] text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
-                            isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
-                          }`}
-                        />
-                        <input
-                          type="text"
-                          placeholder="Param Value"
-                          value={p.value}
-                          onChange={(e) => {
-                            const updated = [...activeStep.params];
-                            updated[pIdx].value = e.target.value;
-                            handleUpdateActiveStep({ params: updated });
-                          }}
-                          className={`flex-1 min-w-[120px] text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
-                            isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
-                          }`}
-                        />
-                        <button
-                          onClick={() => {
-                            const updated = activeStep.params.filter((_, idx) => idx !== pIdx);
-                            handleUpdateActiveStep({ params: updated });
-                          }}
-                          className="p-1 rounded text-slate-500 hover:text-rose-400 shrink-0"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                      <div key={p.id || pIdx} className={`p-2.5 rounded-xl border flex flex-col sm:flex-row sm:items-center gap-2 ${
+                        isDarkMode ? 'bg-slate-900/50 border-slate-800/90' : 'bg-slate-50 border-slate-200'
+                      }`}>
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={p.enabled}
+                            onChange={(e) => {
+                              const updated = [...activeStep.params];
+                              updated[pIdx].enabled = e.target.checked;
+                              handleUpdateActiveStep({ params: updated });
+                            }}
+                            className="rounded border-slate-700 text-purple-600 focus:ring-purple-500 shrink-0"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Param Key"
+                            value={p.key}
+                            onChange={(e) => {
+                              const updated = [...activeStep.params];
+                              updated[pIdx].key = e.target.value;
+                              handleUpdateActiveStep({ params: updated });
+                            }}
+                            className={`flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border focus:outline-none ${
+                              isDarkMode ? 'bg-slate-950 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
+                            }`}
+                          />
+                          <button
+                            onClick={() => {
+                              const updated = activeStep.params.filter((_, idx) => idx !== pIdx);
+                              handleUpdateActiveStep({ params: updated });
+                            }}
+                            className="p-1 rounded text-slate-500 hover:text-rose-400 shrink-0 sm:hidden"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <input
+                            type="text"
+                            placeholder="Param Value"
+                            value={p.value}
+                            onChange={(e) => {
+                              const updated = [...activeStep.params];
+                              updated[pIdx].value = e.target.value;
+                              handleUpdateActiveStep({ params: updated });
+                            }}
+                            className={`flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border focus:outline-none ${
+                              isDarkMode ? 'bg-slate-950 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
+                            }`}
+                          />
+                          <button
+                            onClick={() => {
+                              const updated = activeStep.params.filter((_, idx) => idx !== pIdx);
+                              handleUpdateActiveStep({ params: updated });
+                            }}
+                            className="hidden sm:block p-1 rounded text-slate-500 hover:text-rose-400 shrink-0"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </div>
                     ))
                   )}
@@ -1532,7 +1557,7 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
               {/* TAB 4: VARIABLE EXTRACTION */}
               {activeTab === 'extraction' && (
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h3 className="text-xs font-bold text-slate-200">Response Variable Extractions</h3>
                       <p className="text-[11px] text-slate-400">
@@ -1561,11 +1586,11 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                     </div>
                   ) : (
                     activeStep.extractionRules.map((rule, rIdx) => (
-                      <div key={rule.id || rIdx} className={`p-3 rounded-xl border flex flex-col gap-2 ${
+                      <div key={rule.id || rIdx} className={`p-3 rounded-xl border flex flex-col gap-2.5 ${
                         isDarkMode ? 'bg-slate-900/80 border-slate-800' : 'bg-slate-50 border-slate-200'
                       }`}>
-                        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-                          <div className="flex-1 min-w-[140px]">
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                          <div className="flex-1 min-w-0">
                             <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
                               Variable Name
                             </label>
@@ -1578,13 +1603,13 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                                 updated[rIdx].variableName = e.target.value;
                                 handleUpdateActiveStep({ extractionRules: updated });
                               }}
-                              className={`w-full text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                              className={`w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border focus:outline-none ${
                                 isDarkMode ? 'bg-slate-950 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                               }`}
                             />
                           </div>
 
-                          <div className="flex-1 min-w-[140px]">
+                          <div className="flex-1 min-w-0">
                             <label className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
                               JSON Path / Key
                             </label>
@@ -1597,22 +1622,24 @@ export default function ApiStudio({ onBack, isDarkMode, authUser, activeProject,
                                 updated[rIdx].jsonPath = e.target.value;
                                 handleUpdateActiveStep({ extractionRules: updated });
                               }}
-                              className={`w-full text-xs font-mono px-2.5 py-1.5 rounded border focus:outline-none ${
+                              className={`w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border focus:outline-none ${
                                 isDarkMode ? 'bg-slate-950 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                               }`}
                             />
                           </div>
 
-                          <button
-                            onClick={() => {
-                              const updated = activeStep.extractionRules.filter((_, idx) => idx !== rIdx);
-                              handleUpdateActiveStep({ extractionRules: updated });
-                            }}
-                            className="p-1.5 sm:mt-4 rounded text-slate-500 hover:text-rose-400 shrink-0"
-                            title="Delete rule"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <div className="flex justify-end sm:justify-start">
+                            <button
+                              onClick={() => {
+                                const updated = activeStep.extractionRules.filter((_, idx) => idx !== rIdx);
+                                handleUpdateActiveStep({ extractionRules: updated });
+                              }}
+                              className="p-1.5 sm:mt-5 rounded text-slate-500 hover:text-rose-400 shrink-0"
+                              title="Delete rule"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))

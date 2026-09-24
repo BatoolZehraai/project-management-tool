@@ -51,32 +51,6 @@ export default function Auth({
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [isMeetingTab, setIsMeetingTab] = useState(false);
-  const [guestMeetingRoomId, setGuestMeetingRoomId] = useState('');
-  const [guestDisplayName, setGuestDisplayName] = useState(() => {
-    return localStorage.getItem('guestDisplayName') || '';
-  });
-
-  const handleGuestJoinSubmit = (e) => {
-    if (e) e.preventDefault();
-    let clean = guestMeetingRoomId.trim();
-    if (!clean) return;
-
-    if (clean.includes('/meet/')) {
-      clean = clean.split('/meet/')[1].split('?')[0].split('#')[0].trim();
-    } else if (clean.includes('meet=')) {
-      const match = clean.match(/meet=([^&]+)/);
-      if (match) clean = match[1].trim();
-    } else if (clean.includes('room=')) {
-      const match = clean.match(/room=([^&]+)/);
-      if (match) clean = match[1].trim();
-    }
-
-    if (guestDisplayName.trim()) {
-      localStorage.setItem('guestDisplayName', guestDisplayName.trim());
-    }
-    window.location.href = `/meet/${clean}`;
-  };
 
   const departmentsList = [
     'Business Analysis',
@@ -170,32 +144,29 @@ export default function Auth({
                 <h2 className={`text-xl sm:text-2xl font-black tracking-tight ${
                   isDarkMode ? 'text-white' : 'text-slate-900'
                 }`}>
-                  {isMeetingTab ? 'Join Video Conference' : isLoginTab ? 'Sign In to Governance' : 'Request Access'}
+                  {isLoginTab ? 'Sign In to Governance' : 'Request Access'}
                 </h2>
                 <p className={`text-xs leading-relaxed ${
                   isDarkMode ? 'text-slate-400' : 'text-slate-500'
                 }`}>
-                  {isMeetingTab
-                    ? 'Enter the live Meeting ID / Room Code to connect directly as a participant.'
-                    : isLoginTab
-                      ? 'Enter your verified corporate credentials to access active project workspaces.'
-                      : 'Submit your employee registration for administrator security review.'}
+                  {isLoginTab
+                    ? 'Enter your verified corporate credentials to access active project workspaces.'
+                    : 'Submit your employee registration for administrator security review.'}
                 </p>
               </div>
 
-              {/* Clean Segmented Tab Pill (3-Way: Sign In | Request Access | Join Meeting) */}
+              {/* Clean Segmented Tab Pill (2-Way: Sign In | Request Access) */}
               <div className={`p-1 rounded-2xl border flex gap-1 transition ${
                 isDarkMode ? 'bg-slate-950/90 border-slate-800/80' : 'bg-slate-100 border-slate-200'
               }`}>
                 <button
                   type="button"
                   onClick={() => {
-                    setIsMeetingTab(false);
                     setIsLoginTab(true);
                     setErrorMsg('');
                   }}
                   className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1 cursor-pointer ${
-                    !isMeetingTab && isLoginTab
+                    isLoginTab
                       ? isDarkMode
                         ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-950/50'
                         : 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-md shadow-violet-500/20'
@@ -211,12 +182,11 @@ export default function Auth({
                 <button
                   type="button"
                   onClick={() => {
-                    setIsMeetingTab(false);
                     setIsLoginTab(false);
                     setErrorMsg('');
                   }}
                   className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1 cursor-pointer ${
-                    !isMeetingTab && !isLoginTab
+                    !isLoginTab
                       ? isDarkMode
                         ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-950/50'
                         : 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-md shadow-violet-500/20'
@@ -227,26 +197,6 @@ export default function Auth({
                 >
                   <UserPlus className="h-3.5 w-3.5" />
                   <span>Request</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMeetingTab(true);
-                    setErrorMsg('');
-                  }}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1 cursor-pointer ${
-                    isMeetingTab
-                      ? isDarkMode
-                        ? 'bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-950/50'
-                        : 'bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20'
-                      : isDarkMode
-                        ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-white'
-                  }`}
-                >
-                  <Video className="h-3.5 w-3.5" />
-                  <span>Join Call</span>
                 </button>
               </div>
 
@@ -266,77 +216,7 @@ export default function Auth({
               )}
 
               {/* Form Content */}
-              {isMeetingTab ? (
-                /* GUEST JOIN CALL FORM */
-                <form onSubmit={handleGuestJoinSubmit} className="space-y-4 text-xs">
-                  <div className="space-y-1.5">
-                    <label className={`font-bold uppercase tracking-wider text-[9.5px] flex items-center space-x-1.5 ${
-                      isDarkMode ? 'text-slate-300' : 'text-slate-700'
-                    }`}>
-                      <Link2 className="h-3.5 w-3.5 text-cyan-400" />
-                      <span>Meeting ID or Room Code *</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={guestMeetingRoomId}
-                      onChange={(e) => setGuestMeetingRoomId(e.target.value)}
-                      placeholder="e.g. bahl-sdlc-10, 10, or /meet/..."
-                      required
-                      autoFocus
-                      className={`w-full border rounded-xl px-3.5 py-2.5 font-medium transition focus:outline-none ${
-                        isDarkMode
-                          ? 'border-slate-750 bg-slate-950/80 text-slate-100 placeholder-slate-600 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20'
-                          : 'border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 shadow-xs'
-                      }`}
-                    />
-                    <p className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                      Paste a meeting link, numeric ID, or room code shared by the meeting host.
-                    </p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className={`font-bold uppercase tracking-wider text-[9.5px] flex items-center space-x-1.5 ${
-                      isDarkMode ? 'text-slate-300' : 'text-slate-700'
-                    }`}>
-                      <User className="h-3.5 w-3.5 text-purple-400" />
-                      <span>Your Full Name & Designation *</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={guestDisplayName}
-                      onChange={(e) => setGuestDisplayName(e.target.value)}
-                      placeholder="e.g. Dr. Sarah Jenkins (Auditor) or Ahmed Khan"
-                      required
-                      className={`w-full border rounded-xl px-3.5 py-2.5 font-medium transition focus:outline-none ${
-                        isDarkMode
-                          ? 'border-slate-750 bg-slate-950/80 text-slate-100 placeholder-slate-600 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
-                          : 'border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 shadow-xs'
-                      }`}
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className={`w-full font-extrabold py-3 rounded-xl transition uppercase tracking-wider text-xs flex items-center justify-center space-x-2 shadow-lg cursor-pointer ${
-                      isDarkMode
-                        ? 'bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white shadow-cyan-950/50'
-                        : 'bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white shadow-cyan-500/30'
-                    }`}
-                  >
-                    <Video className="h-4 w-4" />
-                    <span>Connect & Join Meeting</span>
-                  </button>
-
-                  <div className={`p-3 rounded-xl border text-[11px] leading-relaxed flex items-start space-x-2 ${
-                    isDarkMode ? 'bg-cyan-950/20 border-cyan-500/20 text-cyan-300/80' : 'bg-cyan-50 border-cyan-200 text-cyan-800'
-                  }`}>
-                    <Sparkles className="h-3.5 w-3.5 shrink-0 mt-0.5 text-cyan-400" />
-                    <span>
-                      External guests and team members can join the live video session directly without a full system account.
-                    </span>
-                  </div>
-                </form>
-              ) : isLoginTab ? (
+              {isLoginTab ? (
                 /* SIGN IN FORM */
                 <form onSubmit={handleLogin} className="space-y-4 text-xs">
                   {/* Corporate Email */}

@@ -126,10 +126,10 @@ export default function OverviewMetrics({
       </div>
 
       {/* 4 Top KPI Tiles */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {/* Total Tasks */}
         <div
-          className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+          className={`p-3.5 sm:p-5 rounded-2xl border transition-all ${
             isDarkMode
               ? 'bg-[#111322]/90 border-zinc-800/80 shadow-md'
               : 'bg-white border-slate-200/90 shadow-xs'

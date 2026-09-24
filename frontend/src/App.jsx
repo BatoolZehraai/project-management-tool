@@ -1800,11 +1800,11 @@ export default function App() {
               isDarkMode ? 'bg-[#0f111d] border-zinc-800 text-zinc-100' : 'bg-white border-slate-200 text-slate-900 shadow-xs'
             }`}
           >
-            <div className="flex items-center space-x-2.5 min-w-0">
+            <div className="flex items-center space-x-2 min-w-0 flex-1 mr-2">
               <button
                 type="button"
                 onClick={() => setIsMobileMenuOpen(true)}
-                className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                className={`p-1.5 rounded-lg border transition cursor-pointer shrink-0 ${
                   isDarkMode
                     ? 'bg-[#141624] border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800'
                     : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 shadow-xs'
@@ -1818,11 +1818,11 @@ export default function App() {
                   setProjSearchQuery('');
                   setShowProjDirectoryModal(true);
                 }}
-                className="flex items-center space-x-2 min-w-0 cursor-pointer"
+                className="flex items-center space-x-1.5 min-w-0 cursor-pointer overflow-hidden"
                 title="Switch Workspace Project"
               >
-                <img src={bahlLogo} alt="Bank AL Habib" className="h-6 w-auto object-contain shrink-0" />
-                <span className="font-extrabold text-xs tracking-tight truncate max-w-[150px] sm:max-w-[200px]">
+                <img src={bahlLogo} alt="Bank AL Habib" className="h-5.5 w-auto object-contain shrink-0" />
+                <span className="font-extrabold text-xs tracking-tight truncate max-w-[120px] xs:max-w-[160px] sm:max-w-[220px]">
                   {currentProject?.name || 'SDLC Governance'}
                 </span>
                 <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
@@ -2945,12 +2945,12 @@ export default function App() {
                   const formattedId = `PRJ-${String(p.id).padStart(3, '0')}`;
                   
                   return (
-                    <div key={p.id} className={`border p-3.5 rounded-lg flex items-center justify-between gap-4 text-xs transition ${
+                    <div key={p.id} className={`border p-3 sm:p-3.5 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs transition ${
                       isActive 
                         ? (isDarkMode ? 'bg-violet-950/20 border-violet-850' : 'bg-violet-50/50 border-violet-200')
                         : (isDarkMode ? 'bg-zinc-950 border-zinc-900' : 'bg-zinc-50 border-zinc-200 shadow-sm')
                     }`}>
-                      <div className="space-y-1 min-w-0 flex-1">
+                      <div className="space-y-1 min-w-0 flex-1 w-full">
                         <div className="flex items-center space-x-2">
                           <span className="font-mono font-bold text-violet-500 text-[10.5px] tracking-wider shrink-0">{formattedId}</span>
                           <h4 className="font-bold truncate text-xs">{p.name}</h4>
@@ -2963,7 +2963,7 @@ export default function App() {
                         )}
                       </div>
                       
-                      <div className="flex items-center space-x-2 shrink-0">
+                      <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto space-x-2 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-inherit">
                         {!isActive ? (
                           <button
                             onClick={() => {
@@ -2971,7 +2971,7 @@ export default function App() {
                               localStorage.setItem('selectedProjectId', p.id);
                               setShowProjDirectoryModal(false);
                             }}
-                            className={`font-semibold px-2.5 py-1.5 rounded-lg border transition cursor-pointer ${
+                            className={`font-semibold px-3 py-1.5 rounded-lg border transition cursor-pointer text-xs ${
                               isDarkMode 
                                 ? 'bg-zinc-900 border-zinc-800 hover:bg-zinc-700 text-zinc-300' 
                                 : 'bg-white border-zinc-200 hover:bg-zinc-100 text-zinc-650 shadow-sm'
@@ -3179,7 +3179,7 @@ export default function App() {
                   </span>
                 </div>
 
-                <div className={`grid grid-cols-2 gap-2.5 p-3 rounded-xl border text-xs ${
+                <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3 sm:p-3.5 rounded-xl border text-xs ${
                   isDarkMode ? 'bg-[#0f101d] border-zinc-800/80' : 'bg-slate-100/70 border-slate-200/80'
                 }`}>
                   <div>

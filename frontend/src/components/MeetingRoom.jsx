@@ -50,9 +50,183 @@ import {
   MessageCircle,
   Globe,
   Smartphone,
-  Shield
+  Shield,
+  SwitchCamera,
+  FlipHorizontal,
+  Camera
 } from 'lucide-react';
 import axios from 'axios';
+
+// Multi-STUN Configuration for WebRTC NAT traversal and LAN connections
+const ICE_SERVERS = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.relay.metered.ca:80' },
+    { urls: 'stun:stun.services.mozilla.com' }
+  ],
+  iceCandidatePoolSize: 10
+};
+
+// Subcomponent: Live Remote Participant Video & Audio Player with Avatar Fallback
+function RemoteParticipantCard({ remoteUser, stream, isSpeakerMuted }) {
+  const videoRef = useRef(null);
+  const audioRef = useRef(null);
+  const [hasActiveVideo, setHasActiveVideo] = useState(false);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+
+  useEffect(() => {
+    if (!stream) {
+      setHasActiveVideo(false);
+      return;
+    }
+
+    const videoEl = videoRef.current;
+    const audioEl = audioRef.current;
+
+    if (videoEl && videoEl.srcObject !== stream) {
+      videoEl.srcObject = stream;
+    }
+    if (audioEl && audioEl.srcObject !== stream) {
+      audioEl.srcObject = stream;
+    }
+
+    const checkVideo = () => {
+      const vTracks = stream.getVideoTracks ? stream.getVideoTracks() : [];
+      const hasLive = vTracks.length > 0 && vTracks.some(t => t.readyState === 'live' && t.enabled);
+      setHasActiveVideo(hasLive);
+    };
+
+    checkVideo();
+
+    stream.addEventListener('addtrack', checkVideo);
+    stream.addEventListener('removetrack', checkVideo);
+
+    const vTracks = stream.getVideoTracks ? stream.getVideoTracks() : [];
+    vTracks.forEach(t => {
+      t.onmute = checkVideo;
+      t.onunmute = checkVideo;
+      t.onended = checkVideo;
+    });
+
+    const playMedia = async () => {
+      if (videoEl) {
+        try {
+          videoEl.muted = isSpeakerMuted;
+          await videoEl.play();
+          setAutoplayBlocked(false);
+        } catch (e) {
+          try {
+            videoEl.muted = true;
+            await videoEl.play();
+          } catch (e2) {}
+          setAutoplayBlocked(true);
+        }
+      }
+      if (audioEl) {
+        try {
+          audioEl.muted = isSpeakerMuted;
+          await audioEl.play();
+        } catch (e) {
+          setAutoplayBlocked(true);
+        }
+      }
+    };
+
+    playMedia();
+
+    const interval = setInterval(checkVideo, 1000);
+
+    return () => {
+      clearInterval(interval);
+      stream.removeEventListener('addtrack', checkVideo);
+      stream.removeEventListener('removetrack', checkVideo);
+      vTracks.forEach(t => {
+        t.onmute = null;
+        t.onunmute = null;
+        t.onended = null;
+      });
+    };
+  }, [stream, isSpeakerMuted]);
+
+  const handleUnlockAutoplay = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = isSpeakerMuted;
+      videoRef.current.play().catch(() => {});
+    }
+    if (audioRef.current) {
+      audioRef.current.muted = isSpeakerMuted;
+      audioRef.current.play().catch(() => {});
+    }
+    setAutoplayBlocked(false);
+  };
+
+  return (
+    <div 
+      onClick={handleUnlockAutoplay}
+      className="w-full h-full min-h-0 min-w-0 rounded-2xl border border-slate-800/90 bg-gradient-to-b from-[#141724] to-[#0e1017] flex flex-col justify-between relative overflow-hidden transition-all duration-300 shadow-2xl group cursor-pointer"
+    >
+      {/* Hidden dedicated audio element to ensure audio plays even when video is hidden */}
+      <audio
+        ref={audioRef}
+        autoPlay
+        playsInline
+        muted={isSpeakerMuted}
+        className="hidden"
+      />
+
+      {/* Live Video Element */}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        webkit-playsinline="true"
+        muted={isSpeakerMuted}
+        className={`w-full h-full object-cover absolute inset-0 z-10 transition-opacity duration-300 ${
+          hasActiveVideo ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+      />
+
+      {/* Fallback stylized avatar when camera is off */}
+      {!hasActiveVideo && (
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center relative w-full h-full p-2 sm:p-4 z-0">
+          <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-tr from-indigo-700 via-blue-600 to-cyan-500 text-white font-extrabold text-3xl sm:text-4xl flex items-center justify-center shadow-2xl border-2 border-blue-400/40 relative z-10">
+            {(remoteUser?.name || 'P').charAt(0)}
+          </div>
+          <span className="text-[11px] text-zinc-400 font-medium mt-3">Camera is turned off</span>
+        </div>
+      )}
+
+      {/* Autoplay blocked banner / Tap to Unmute */}
+      {autoplayBlocked && (
+        <div className="absolute inset-0 z-30 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleUnlockAutoplay();
+            }}
+            className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-bold text-xs flex items-center space-x-2 shadow-2xl cursor-pointer"
+          >
+            <Volume2 size={15} />
+            <span>Tap to Unmute Audio</span>
+          </button>
+        </div>
+      )}
+
+      {/* Bottom Name & Mic status badge */}
+      <div className="absolute bottom-3 left-3 z-20 flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-black/75 backdrop-blur-md border border-white/10 text-xs font-semibold text-white shadow-lg pointer-events-none">
+        <span className={`p-1 rounded-full ${remoteUser?.is_mic_on ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+          {remoteUser?.is_mic_on ? <Mic size={12} /> : <MicOff size={12} />}
+        </span>
+        <span className="truncate max-w-[200px]">{remoteUser?.name || 'Remote Participant'}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function MeetingRoom({
   meeting,
@@ -96,9 +270,14 @@ export default function MeetingRoom({
   const [isCamOn, setIsCamOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isSpeakerMuted, setIsSpeakerMuted] = useState(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState('user'); // 'user' (front) | 'environment' (back)
+  const [isCameraMirrored, setIsCameraMirrored] = useState(true); // Horizontal selfie mirror
+  const [isPipSwapped, setIsPipSwapped] = useState(false); // Mobile Picture-in-Picture swap
 
-  // Dynamic Remote Active Attendees list (Only users who actually joined)
+  // Dynamic Remote Active Attendees list & WebRTC Streams Dictionary
   const [remoteAttendees, setRemoteAttendees] = useState([]);
+  const [remoteStreams, setRemoteStreams] = useState({});
+  const [availableDevices, setAvailableDevices] = useState({ videoDevices: [], audioDevices: [] });
 
   // =========================================================================
   // STRUCTURED MINUTES OF MEETING (MoM) STATE
@@ -214,7 +393,7 @@ export default function MeetingRoom({
   // Additional Markdown Discussion Notes
   const [contentMarkdown, setContentMarkdown] = useState('');
 
-  // Container refs
+  // Container & WebRTC Connection refs
   const mainContainerRef = useRef(null);
   const jitsiContainerRef = useRef(null);
   const jitsiApiRef = useRef(null);
@@ -222,9 +401,12 @@ export default function MeetingRoom({
   const screenVideoRef = useRef(null);
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
+  const peerConnectionsRef = useRef({});
+  const iceCandidateQueuesRef = useRef({});
+  const lastSignalIdRef = useRef(0);
 
   const myParticipantId = useRef(
-    authUser?.id ? `user_${authUser.id}` : `guest_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+    `${authUser?.id ? `user_${authUser.id}` : 'guest'}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
   ).current;
 
   const myDisplayName = authUser?.name || guestDisplayName.trim() || 'Guest Attendee';
@@ -265,7 +447,7 @@ export default function MeetingRoom({
         setAbsenteesList(Array.from(new Set(absentNames)));
       }
     }
-  }, [authUser, remoteAttendees, meeting]);
+  }, [authUser, remoteAttendees, meeting, myDisplayName]);
 
   // Pre-load existing MoM data or initialize smart defaults
   useEffect(() => {
@@ -360,7 +542,7 @@ export default function MeetingRoom({
     };
 
     syncPresence();
-    const interval = setInterval(syncPresence, 4000);
+    const interval = setInterval(syncPresence, 1500);
 
     return () => {
       isCancelled = true;
@@ -369,60 +551,306 @@ export default function MeetingRoom({
     };
   }, [roomName, myParticipantId, authUser, isGuest, isMicOn, isCamOn, isScreenSharing, API_BASE, isInLobby, myDisplayName]);
 
-  // WebRTC Local Media Handler
-  const startLocalMedia = useCallback(async (videoRequested = true, audioRequested = true) => {
+  // =========================================================================
+  // MULTI-DEVICE CAMERA PERMISSIONS, ENUMERATION & CASCADING FALLBACKS
+  // =========================================================================
+
+  const isSecureContextDetected = typeof window !== 'undefined' && (
+    window.isSecureContext ||
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1'
+  );
+
+  const enumerateMediaDevices = useCallback(async () => {
+    if (!navigator?.mediaDevices?.enumerateDevices) return { videoDevices: [], audioDevices: [] };
     try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(d => d.kind === 'videoinput');
+      const audioDevices = devices.filter(d => d.kind === 'audioinput');
+      setAvailableDevices({ videoDevices, audioDevices });
+      return { videoDevices, audioDevices };
+    } catch (err) {
+      console.warn('Device enumeration error:', err);
+      return { videoDevices: [], audioDevices: [] };
+    }
+  }, []);
+
+  const sendSignal = useCallback(async (toId, type, payload) => {
+    try {
+      await axios.post(`${API_BASE}/meetings/public/${roomName}/signal`, {
+        from_id: myParticipantId,
+        to_id: toId,
+        type,
+        payload
+      });
+    } catch (err) {
+      console.warn(`Failed to send signal ${type} to ${toId}:`, err);
+    }
+  }, [API_BASE, roomName, myParticipantId]);
+
+  const flushIceCandidates = useCallback(async (peerId, pc) => {
+    const queue = iceCandidateQueuesRef.current[peerId] || [];
+    if (queue.length > 0 && pc.remoteDescription && pc.remoteDescription.type) {
+      for (const candidate of queue) {
+        try {
+          if (candidate && candidate.candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          }
+        } catch (err) {
+          console.warn('Failed to add queued ICE candidate:', err);
+        }
+      }
+      iceCandidateQueuesRef.current[peerId] = [];
+    }
+  }, []);
+
+  const syncTracksToPeer = useCallback((pc, stream) => {
+    if (!pc || pc.signalingState === 'closed') return;
+    try {
+      const streamTracks = stream ? stream.getTracks() : [];
+      const videoTrack = streamTracks.find(t => t.kind === 'video' && t.readyState === 'live') || null;
+      const audioTrack = streamTracks.find(t => t.kind === 'audio' && t.readyState === 'live') || null;
+
+      const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+      const vTransceiver = transceivers.find(t => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video');
+      const aTransceiver = transceivers.find(t => t.receiver?.track?.kind === 'audio' || t.sender?.track?.kind === 'audio');
+
+      if (vTransceiver) {
+        if (videoTrack) {
+          vTransceiver.direction = 'sendrecv';
+        }
+        vTransceiver.sender.replaceTrack(videoTrack).catch(() => {});
+      } else if (videoTrack) {
+        try { pc.addTrack(videoTrack, stream); } catch (e) {}
+      }
+
+      if (aTransceiver) {
+        if (audioTrack) {
+          aTransceiver.direction = 'sendrecv';
+        }
+        aTransceiver.sender.replaceTrack(audioTrack).catch(() => {});
+      } else if (audioTrack) {
+        try { pc.addTrack(audioTrack, stream); } catch (e) {}
+      }
+    } catch (err) {
+      console.warn('syncTracksToPeer error:', err);
+    }
+  }, []);
+
+  const startLocalMedia = useCallback(async (videoRequested = true, audioRequested = true) => {
+    if (!videoRequested && !audioRequested) {
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(t => t.stop());
+        localStreamRef.current = null;
+      }
+      if (localVideoRef.current) localVideoRef.current.srcObject = null;
+      setIsCamOn(false);
+      setIsMicOn(false);
+      Object.values(peerConnectionsRef.current).forEach(pc => {
+        syncTracksToPeer(pc, null);
+      });
+      return null;
+    }
+
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      console.warn('getUserMedia not supported on this browser or origin');
+      setIsCamOn(false);
+      setIsMicOn(false);
+      if (showError) {
+        if (!isSecureContextDetected) {
+          showError('Mobile Viewer Mode: Mobile browsers require HTTPS to broadcast camera. You can still watch and hear everyone in the room.');
+        } else {
+          showError('Camera/Microphone access is not available on this browser or device.');
+        }
+      }
+      return null;
+    }
+
+    await enumerateMediaDevices();
+
+    let stream = null;
+
+    if (videoRequested && audioRequested) {
+      const constraints = {
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: {
+          facingMode: "user",
+          width: { ideal: 640, max: 1280 },
+          height: { ideal: 480, max: 720 },
+        }
+      };
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (err) {
+        console.warn("Retrying with minimal constraints...", err);
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        } catch (err2) {
+          console.warn("Minimal constraints failed, trying single-track fallback...", err2);
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            setIsMicOn(false);
+          } catch (err3) {
+            try {
+              stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+              setIsCamOn(false);
+            } catch (err4) {
+              console.error("All media devices failed to open:", err4);
+              if (showError) {
+                if (err4.name === 'NotAllowedError' || err4.name === 'PermissionDeniedError') {
+                  showError('Camera/Microphone permission denied. Please allow access in browser settings.');
+                } else if (err4.name === 'NotFoundError' || err4.name === 'DevicesNotFoundError') {
+                  showError('No camera or microphone found on this device.');
+                } else if (err4.name === 'NotReadableError' || err4.name === 'TrackStartError') {
+                  showError('Camera/Microphone is currently in use by another application.');
+                } else {
+                  showError('Could not access media devices: ' + (err4.message || err4.name));
+                }
+              }
+              return null;
+            }
+          }
+        }
+      }
+    } else if (videoRequested) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "user",
+            width: { ideal: 640, max: 1280 },
+            height: { ideal: 480, max: 720 },
+          }
+        });
+      } catch (e1) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        } catch (e2) {
+          console.warn('Camera stream fallback failed:', e2);
+          if (showError) showError('Camera could not be accessed. Please check device permissions.');
+          return null;
+        }
+      }
+    } else if (audioRequested) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          }
+        });
+      } catch (e1) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (e2) {
+          console.warn('Microphone stream fallback failed:', e2);
+          if (showError) showError('Microphone could not be accessed. Please check device permissions.');
+          return null;
+        }
+      }
+    }
+
+    if (stream) {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(t => t.stop());
       }
-
-      if (!videoRequested && !audioRequested) {
-        if (localVideoRef.current) localVideoRef.current.srcObject = null;
-        localStreamRef.current = null;
-        setIsCamOn(false);
-        setIsMicOn(false);
-        return;
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: videoRequested ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false,
-        audio: audioRequested
-      });
-
       localStreamRef.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
-      setIsCamOn(videoRequested);
-      setIsMicOn(audioRequested);
-    } catch (err) {
-      console.warn('Camera/Microphone stream not started:', err.message);
-      setIsCamOn(false);
+      const hasVideo = stream.getVideoTracks().length > 0;
+      const hasAudio = stream.getAudioTracks().length > 0;
+      setIsCamOn(hasVideo);
+      setIsMicOn(hasAudio);
+
+      // Sync across active peer connections & send renegotiation
+      Object.entries(peerConnectionsRef.current).forEach(async ([peerId, pc]) => {
+        syncTracksToPeer(pc, stream);
+        try {
+          if (pc.signalingState === 'stable') {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            await sendSignal(peerId, 'offer', offer);
+          }
+        } catch (e) {
+          console.warn('Renegotiation offer error:', e);
+        }
+      });
     }
-  }, []);
+
+    return stream;
+  }, [cameraFacingMode, enumerateMediaDevices, isSecureContextDetected, showError, syncTracksToPeer, sendSignal]);
+
+  // Switch Front / Back Camera (Mobile & Multi-camera devices)
+  const switchCameraFacing = async () => {
+    const nextFacing = cameraFacingMode === 'user' ? 'environment' : 'user';
+    setCameraFacingMode(nextFacing);
+    setIsCameraMirrored(nextFacing === 'user');
+    if (isCamOn) {
+      await startLocalMedia(true, isMicOn, nextFacing);
+      if (showSuccess) showSuccess(`Switched to ${nextFacing === 'user' ? 'Front' : 'Back'} Camera`);
+    } else {
+      if (showSuccess) showSuccess(`Camera set to ${nextFacing === 'user' ? 'Front' : 'Back'}`);
+    }
+  };
+
+  // Toggle Camera Mirror (Flip horizontally)
+  const toggleCameraMirror = () => {
+    setIsCameraMirrored(prev => !prev);
+    if (showSuccess) showSuccess(!isCameraMirrored ? 'Camera mirror enabled' : 'Camera mirror disabled');
+  };
+
+  // Ensure local video element always attaches active local stream across Lobby & In-Call transitions
+  useEffect(() => {
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
+  }, [isInLobby, isCamOn]);
 
   // Toggle Camera
   const toggleCamera = async () => {
     const nextState = !isCamOn;
     setIsCamOn(nextState);
     if (nextState) {
-      await startLocalMedia(true, isMicOn);
+      await startLocalMedia(true, isMicOn, cameraFacingMode);
     } else {
       if (localStreamRef.current) {
         localStreamRef.current.getVideoTracks().forEach(t => t.stop());
       }
       if (localVideoRef.current) localVideoRef.current.srcObject = null;
+      Object.entries(peerConnectionsRef.current).forEach(async ([peerId, pc]) => {
+        syncTracksToPeer(pc, localStreamRef.current);
+        try {
+          if (pc.signalingState === 'stable') {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            await sendSignal(peerId, 'offer', offer);
+          }
+        } catch (e) {}
+      });
     }
   };
 
   // Toggle Microphone
-  const toggleMicrophone = () => {
+  const toggleMicrophone = async () => {
     const nextState = !isMicOn;
     setIsMicOn(nextState);
     if (localStreamRef.current) {
-      localStreamRef.current.getAudioTracks().forEach(t => {
-        t.enabled = nextState;
-      });
+      const audioTracks = localStreamRef.current.getAudioTracks();
+      if (audioTracks.length > 0) {
+        audioTracks.forEach(t => {
+          t.enabled = nextState;
+        });
+      } else if (nextState) {
+        await startLocalMedia(isCamOn, true);
+      }
+    } else if (nextState) {
+      await startLocalMedia(isCamOn, true);
     }
   };
 
@@ -480,7 +908,215 @@ export default function MeetingRoom({
     }
   };
 
-  // Cleanup WebRTC streams on unmount
+  // =========================================================================
+  // WebRTC BI-DIRECTIONAL SIGNALING & PEER CONNECTION LIFECYCLE
+  // =========================================================================
+
+  const createPeerConnection = useCallback((remotePeerId) => {
+    if (peerConnectionsRef.current[remotePeerId]) {
+      const existing = peerConnectionsRef.current[remotePeerId];
+      if (existing.signalingState !== 'closed') return existing;
+    }
+
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+    peerConnectionsRef.current[remotePeerId] = pc;
+    iceCandidateQueuesRef.current[remotePeerId] = [];
+
+    // 1. Attach Local Tracks if stream is running
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        try {
+          pc.addTrack(track, localStreamRef.current);
+        } catch (e) {
+          console.warn('Error adding initial track to peer:', e);
+        }
+      });
+    }
+
+    // Pre-allocate audio & video transceivers so SDP negotiation always establishes full media pipes
+    try {
+      const existingTransceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+      const hasAudio = existingTransceivers.some(t => t.receiver?.track?.kind === 'audio' || (t.sender?.track && t.sender.track.kind === 'audio'));
+      const hasVideo = existingTransceivers.some(t => t.receiver?.track?.kind === 'video' || (t.sender?.track && t.sender.track.kind === 'video'));
+
+      if (!hasAudio && pc.addTransceiver) {
+        pc.addTransceiver('audio', { direction: 'sendrecv' });
+      }
+      if (!hasVideo && pc.addTransceiver) {
+        pc.addTransceiver('video', { direction: 'sendrecv' });
+      }
+    } catch (err) {
+      console.warn('Transceiver pre-allocation warning:', err);
+    }
+
+    // 2. Dynamic Track Handler (Audio & Video)
+    pc.ontrack = (event) => {
+      console.log(`[WebRTC] Incoming remote track: ${event.track.kind} from ${remotePeerId}`);
+      const incomingStream = (event.streams && event.streams[0]) ? event.streams[0] : null;
+      setRemoteStreams(prev => {
+        const existing = prev[remotePeerId];
+        if (incomingStream) {
+          return { ...prev, [remotePeerId]: incomingStream };
+        }
+        if (existing) {
+          if (!existing.getTracks().some(t => t.id === event.track.id)) {
+            existing.addTrack(event.track);
+          }
+          return { ...prev, [remotePeerId]: existing };
+        }
+        return { ...prev, [remotePeerId]: new MediaStream([event.track]) };
+      });
+    };
+
+    // 3. ICE Candidate Emission
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        sendSignal(remotePeerId, 'candidate', event.candidate.toJSON ? event.candidate.toJSON() : event.candidate);
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'connected') {
+        console.log(`[WebRTC] Peer ${remotePeerId} connected`);
+      } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        console.warn(`[WebRTC] Peer ${remotePeerId} connectionState: ${pc.connectionState}`);
+      }
+    };
+
+    return pc;
+  }, [sendSignal]);
+
+  // Offer generation when remote attendees arrive
+  useEffect(() => {
+    if (isInLobby && isGuest) return;
+
+    remoteAttendees.forEach(async (remoteUser) => {
+      const peerId = remoteUser.id;
+      if (!peerConnectionsRef.current[peerId] || peerConnectionsRef.current[peerId].signalingState === 'closed') {
+        const pc = createPeerConnection(peerId);
+
+        // Deterministic initiator: lexicographically higher ID sends the initial offer
+        const isInitiator = myParticipantId.localeCompare(peerId) > 0;
+        if (isInitiator) {
+          try {
+            const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+            await pc.setLocalDescription(offer);
+            await sendSignal(peerId, 'offer', offer);
+          } catch (err) {
+            console.warn(`Error creating WebRTC offer for ${peerId}:`, err);
+          }
+        }
+      }
+    });
+
+    // Cleanup disconnected attendees
+    const activeIds = new Set(remoteAttendees.map(r => r.id));
+    Object.keys(peerConnectionsRef.current).forEach(peerId => {
+      if (!activeIds.has(peerId)) {
+        try {
+          peerConnectionsRef.current[peerId].close();
+        } catch (e) {}
+        delete peerConnectionsRef.current[peerId];
+        delete iceCandidateQueuesRef.current[peerId];
+        setRemoteStreams(prev => {
+          const next = { ...prev };
+          delete next[peerId];
+          return next;
+        });
+      }
+    });
+  }, [remoteAttendees, isInLobby, isGuest, myParticipantId, createPeerConnection, sendSignal]);
+
+  // Signaling Polling Effect
+  useEffect(() => {
+    if (isInLobby && isGuest) return;
+    let isCancelled = false;
+
+    const pollSignals = async () => {
+      try {
+        const res = await axios.get(
+          `${API_BASE}/meetings/public/${roomName}/signal/poll/${myParticipantId}?last_id=${lastSignalIdRef.current}`
+        );
+        if (isCancelled || !res.data?.signals) return;
+
+        const signals = res.data.signals;
+        if (signals.length > 0) {
+          lastSignalIdRef.current = res.data.max_id || lastSignalIdRef.current;
+
+          for (const sig of signals) {
+            const fromPeerId = sig.from_id;
+            const pc = createPeerConnection(fromPeerId);
+
+            if (sig.type === 'offer') {
+              try {
+                await pc.setRemoteDescription(new RTCSessionDescription(sig.payload));
+                await flushIceCandidates(fromPeerId, pc);
+                
+                // Sync local tracks
+                if (localStreamRef.current) {
+                  syncTracksToPeer(pc, localStreamRef.current);
+                }
+
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                await sendSignal(fromPeerId, 'answer', answer);
+              } catch (err) {
+                console.warn(`Error handling offer from ${fromPeerId}:`, err);
+              }
+            } else if (sig.type === 'answer') {
+              try {
+                if (pc.signalingState === 'have-local-offer') {
+                  await pc.setRemoteDescription(new RTCSessionDescription(sig.payload));
+                  await flushIceCandidates(fromPeerId, pc);
+
+                  // Sync local tracks
+                  if (localStreamRef.current) {
+                    syncTracksToPeer(pc, localStreamRef.current);
+                  }
+                }
+              } catch (err) {
+                console.warn(`Error handling answer from ${fromPeerId}:`, err);
+              }
+            } else if (sig.type === 'candidate' && sig.payload) {
+              try {
+                if (pc.remoteDescription && pc.remoteDescription.type) {
+                  await pc.addIceCandidate(new RTCIceCandidate(sig.payload));
+                } else {
+                  iceCandidateQueuesRef.current[fromPeerId] = iceCandidateQueuesRef.current[fromPeerId] || [];
+                  iceCandidateQueuesRef.current[fromPeerId].push(sig.payload);
+                }
+              } catch (err) {
+                console.warn(`Error adding ICE candidate from ${fromPeerId}:`, err);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        // Network catch
+      }
+    };
+
+    const interval = setInterval(pollSignals, 350);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [roomName, myParticipantId, API_BASE, isInLobby, isGuest, createPeerConnection, flushIceCandidates, sendSignal, syncTracksToPeer]);
+
+  // Media Device change listener
+  useEffect(() => {
+    if (navigator?.mediaDevices?.addEventListener) {
+      const handleDeviceChange = () => {
+        enumerateMediaDevices();
+      };
+      navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+      return () => {
+        navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+      };
+    }
+  }, [enumerateMediaDevices]);
+
+  // Clean unmount cleanup
   useEffect(() => {
     return () => {
       if (localStreamRef.current) {
@@ -489,6 +1125,9 @@ export default function MeetingRoom({
       if (screenStreamRef.current) {
         screenStreamRef.current.getTracks().forEach(t => t.stop());
       }
+      Object.values(peerConnectionsRef.current).forEach(pc => {
+        try { pc.close(); } catch (e) {}
+      });
     };
   }, []);
 
@@ -868,6 +1507,8 @@ export default function MeetingRoom({
     };
   };
 
+  const hasSavedMoMRef = useRef(false);
+
   // Save MoM
   const handleSaveMoM = async () => {
     if (!meeting?.id || isGuest) return;
@@ -880,6 +1521,7 @@ export default function MeetingRoom({
         `${API_BASE}/projects/${projectId}/meetings/${meeting.id}/mom`,
         payload
       );
+      hasSavedMoMRef.current = true;
       if (showSuccess) showSuccess('Minutes of Meeting (MoM) & Governance decisions saved successfully!');
     } catch (err) {
       if (showError) showError(err);
@@ -895,6 +1537,7 @@ export default function MeetingRoom({
       setIsEmailingMoM(true);
       // Auto-save first before sending email
       await handleSaveMoM();
+      hasSavedMoMRef.current = true;
       
       const projectId = currentProject?.id || meeting.project_id;
       const res = await axios.post(
@@ -907,6 +1550,19 @@ export default function MeetingRoom({
     } finally {
       setIsEmailingMoM(false);
     }
+  };
+
+  // Handle End Call / Disconnect with smart cleanup of empty instant meetings
+  const handleEndCallOrLeave = async () => {
+    const isInstant = meeting?.is_instant || (meeting?.title && meeting.title.startsWith('Instant '));
+    if (isInstant && !hasSavedMoMRef.current && !meeting?.mom && remoteAttendees.length === 0 && meeting?.id && !isGuest) {
+      try {
+        await axios.delete(`${API_BASE}/meetings/${meeting.id}`);
+      } catch (e) {
+        // Silently continue
+      }
+    }
+    if (onLeave) onLeave();
   };
 
   // Copy Full Markdown MoM Summary
@@ -1922,7 +2578,24 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
   if (isInLobby && isGuest) {
     return (
       <div className="h-[calc(100vh-80px)] rounded-2xl border border-slate-800 bg-[#090b12] text-slate-100 flex flex-col justify-center items-center p-4 sm:p-6 overflow-y-auto">
-        <div className="max-w-3xl w-full grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+        <div className="max-w-3xl w-full flex flex-col gap-4">
+          
+          {/* Mobile Viewer Mode / Insecure Context Notice */}
+          {!isSecureContextDetected && (
+            <div className="p-3.5 rounded-2xl bg-indigo-950/60 border border-indigo-500/40 text-indigo-200 text-xs flex items-start space-x-3 shadow-xl">
+              <Info className="h-5 w-5 text-indigo-400 shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-1">
+                <p className="font-bold text-indigo-300">
+                  Mobile Viewer Mode Active
+                </p>
+                <p className="text-[11px] text-indigo-200/90 leading-relaxed">
+                  You can watch the conference video and hear everyone live. (Note: Mobile browsers require HTTPS to transmit your camera).
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
           
           {/* Left: Camera & Microphone Live Preview Box */}
           <div className="flex flex-col items-center space-y-4">
@@ -1933,6 +2606,7 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                   autoPlay
                   playsInline
                   muted
+                  style={{ transform: 'scaleX(-1)' }}
                   className="w-full h-full object-cover rounded-2xl"
                 />
               ) : (
@@ -1949,26 +2623,26 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                 <button
                   type="button"
                   onClick={toggleMicrophone}
-                  className={`p-2 rounded-lg transition cursor-pointer ${
+                  className={`p-2.5 rounded-xl transition cursor-pointer ${
                     isMicOn
                       ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
                       : 'bg-rose-600 hover:bg-rose-500 text-white'
                   }`}
                   title={isMicOn ? 'Mute Microphone' : 'Unmute Microphone'}
                 >
-                  {isMicOn ? <Mic size={15} /> : <MicOff size={15} />}
+                  {isMicOn ? <Mic size={16} /> : <MicOff size={16} />}
                 </button>
                 <button
                   type="button"
                   onClick={toggleCamera}
-                  className={`p-2 rounded-lg transition cursor-pointer ${
+                  className={`p-2.5 rounded-xl transition cursor-pointer ${
                     isCamOn
                       ? 'bg-purple-600 hover:bg-purple-500 text-white'
                       : 'bg-slate-800 hover:bg-slate-750 text-zinc-300'
                   }`}
                   title={isCamOn ? 'Turn Camera Off' : 'Turn Camera On'}
                 >
-                  {isCamOn ? <Video size={15} /> : <VideoOff size={15} />}
+                  {isCamOn ? <Video size={16} /> : <VideoOff size={16} />}
                 </button>
               </div>
             </div>
@@ -2046,7 +2720,7 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
               className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-[0.99] text-white font-extrabold text-sm flex items-center justify-center space-x-2 transition shadow-xl shadow-purple-950/60 cursor-pointer"
             >
               <Video size={16} />
-              <span>Join Meeting Now</span>
+              <span>{isSecureContextDetected ? 'Join Meeting Now' : 'Join Conference (Watch & Listen)'}</span>
             </button>
 
             {/* Back / Corporate Login Option */}
@@ -2069,8 +2743,9 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
 
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   return (
     <div
@@ -2133,14 +2808,24 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
       </div>
 
       {/* Main Workspace Area: Video Viewport + MoM Drawer */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 min-w-0 min-h-0 flex overflow-hidden relative">
         {/* Main Video Viewport (Edge-to-Edge Zoom/Teams Layout) */}
-        <div className="flex-1 h-full relative bg-[#090b10] flex flex-col justify-between overflow-hidden">
+        <div className="flex-1 min-w-0 h-full relative bg-[#090b10] flex flex-col justify-between overflow-hidden">
           
           {/* MODE 1: NATIVE WEBRTC STUDIO */}
           {conferenceMode === 'studio' && (
-            <div className="flex-1 min-h-0 p-2 sm:p-3 md:p-4 flex flex-col justify-between overflow-hidden relative">
+            <div className="flex-1 min-h-0 min-w-0 p-2 sm:p-3 md:p-4 flex flex-col justify-between overflow-hidden relative">
               
+              {/* Mobile Viewer Mode Notice */}
+              {!isSecureContextDetected && (
+                <div className="mb-2 p-2.5 sm:p-3 rounded-xl bg-indigo-950/60 border border-indigo-500/40 text-indigo-200 text-xs flex items-center space-x-2.5 shrink-0 shadow-lg">
+                  <Info className="h-4 w-4 text-indigo-400 shrink-0" />
+                  <div className="flex-1 text-[11px] text-indigo-200/90 leading-tight">
+                    <strong className="text-indigo-300">Mobile Viewer Mode:</strong> Receiving live video and audio from conference host. (Connect via HTTPS to broadcast your camera).
+                  </div>
+                </div>
+              )}
+
               {/* Screen Share View (if active) */}
               {isScreenSharing && (
                 <div className="mb-2 sm:mb-3 flex-1 min-h-0 rounded-2xl bg-black border border-purple-500/40 relative overflow-hidden flex items-center justify-center shadow-2xl">
@@ -2157,8 +2842,8 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                 </div>
               )}
 
-              {/* Dynamic Responsive Participant Grid */}
-              <div className={`flex-1 min-h-0 w-full grid gap-2 sm:gap-3 items-center justify-center overflow-hidden ${
+              {/* Dynamic Responsive Participant Grid (Clean Zoom / Teams Balanced View) */}
+              <div className={`flex-1 min-h-0 min-w-0 w-full grid gap-2 sm:gap-3 overflow-hidden ${
                 isScreenSharing
                   ? 'grid-cols-2 max-h-44'
                   : totalInRoom === 1
@@ -2166,33 +2851,37 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                     : totalInRoom === 2
                       ? 'grid-cols-1 md:grid-cols-2'
                       : totalInRoom <= 4
-                        ? 'grid-cols-1 sm:grid-cols-2'
-                        : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+                        ? 'grid-cols-2'
+                        : 'grid-cols-2 lg:grid-cols-3'
               }`}>
                 
-                {/* 1. SELF PARTICIPANT TILE */}
-                <div className="w-full h-full min-h-0 rounded-2xl border border-slate-800/90 bg-gradient-to-b from-[#161a29] to-[#0f111a] flex flex-col justify-between relative overflow-hidden transition-all duration-300 shadow-2xl group">
+                {/* 1. SELF PARTICIPANT TILE (Automatically Mirrored Selfie View) */}
+                <div className="w-full h-full min-h-0 min-w-0 rounded-2xl border border-slate-800/90 bg-gradient-to-b from-[#161a29] to-[#0f111a] flex flex-col justify-between relative overflow-hidden transition-all duration-300 shadow-2xl group">
                   
-                  <div className="flex-1 min-h-0 flex items-center justify-center relative w-full h-full p-2 sm:p-4 overflow-hidden">
-                    {isCamOn ? (
-                      <video
-                        ref={localVideoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="w-full h-full object-cover rounded-xl shadow-2xl"
-                      />
-                    ) : (
-                      <div className="relative flex flex-col items-center justify-center">
-                        {isMicOn && (
-                          <div className="absolute w-32 h-32 rounded-full bg-purple-500/10 animate-ping pointer-events-none" />
-                        )}
-                        <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-tr from-purple-700 via-indigo-600 to-violet-500 text-white font-extrabold text-3xl sm:text-4xl flex items-center justify-center shadow-2xl border-2 border-purple-400/40 relative z-10">
-                          {(authUser?.name || 'C').charAt(0)}
-                        </div>
+                  {/* Live Local Video Element */}
+                  <video
+                    ref={localVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{ transform: 'scaleX(-1)' }}
+                    className={`w-full h-full object-cover absolute inset-0 z-10 transition-opacity duration-300 ${
+                      isCamOn ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                    }`}
+                  />
+
+                  {/* Fallback stylized avatar when camera is off */}
+                  {!isCamOn && (
+                    <div className="flex-1 min-h-0 flex flex-col items-center justify-center relative w-full h-full p-2 sm:p-4 z-0">
+                      {isMicOn && (
+                        <div className="absolute w-32 h-32 rounded-full bg-purple-500/10 animate-ping pointer-events-none" />
+                      )}
+                      <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-tr from-purple-700 via-indigo-600 to-violet-500 text-white font-extrabold text-3xl sm:text-4xl flex items-center justify-center shadow-2xl border-2 border-purple-400/40 relative z-10">
+                        {(authUser?.name || 'C').charAt(0)}
                       </div>
-                    )}
-                  </div>
+                      <span className="text-[11px] text-zinc-400 font-medium mt-3">Camera is turned off</span>
+                    </div>
+                  )}
 
                   {/* Standard Bottom-Left Badge */}
                   <div className="absolute bottom-3 left-3 z-20 flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-black/75 backdrop-blur-md border border-white/10 text-xs font-semibold text-white shadow-lg">
@@ -2205,25 +2894,14 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                   </div>
                 </div>
 
-                {/* 2. ONLY REAL JOINED ATTENDEES */}
+                {/* 2. LIVE REMOTE PARTICIPANTS VIA WEBRTC */}
                 {remoteAttendees.map((remoteUser) => (
-                  <div
+                  <RemoteParticipantCard
                     key={remoteUser.id}
-                    className="w-full h-full min-h-0 rounded-2xl border border-slate-800/90 bg-gradient-to-b from-[#141724] to-[#0e1017] flex flex-col justify-between relative overflow-hidden transition-all duration-300 shadow-2xl group"
-                  >
-                    <div className="flex-1 min-h-0 flex items-center justify-center relative w-full h-full p-2 sm:p-4">
-                      <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-tr from-indigo-700 via-blue-600 to-cyan-500 text-white font-extrabold text-3xl sm:text-4xl flex items-center justify-center shadow-2xl border-2 border-blue-400/40 relative z-10">
-                        {remoteUser.name.charAt(0)}
-                      </div>
-                    </div>
-
-                    <div className="absolute bottom-3 left-3 z-20 flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-black/75 backdrop-blur-md border border-white/10 text-xs font-semibold text-white shadow-lg">
-                      <span className={`p-1 rounded-full ${remoteUser.is_mic_on ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                        {remoteUser.is_mic_on ? <Mic size={12} /> : <MicOff size={12} />}
-                      </span>
-                      <span className="truncate max-w-[200px]">{remoteUser.name}</span>
-                    </div>
-                  </div>
+                    remoteUser={remoteUser}
+                    stream={remoteStreams[remoteUser.id]}
+                    isSpeakerMuted={isSpeakerMuted}
+                  />
                 ))}
               </div>
 
@@ -2248,7 +2926,7 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                 </div>
               )}
 
-              {/* Fixed Bottom Controls Bar (Zoom/Teams Always-On Interface) */}
+              {/* Fixed Bottom Controls Bar (Clean Zoom / Teams Interface) */}
               <div className="h-16 px-2 sm:px-4 md:px-6 rounded-2xl bg-[#131622]/95 border border-slate-800 flex items-center justify-between shadow-2xl backdrop-blur-2xl shrink-0 mt-2 z-20 overflow-x-auto gap-1 sm:gap-2 md:gap-3">
                 {/* Left: Meeting Name */}
                 <div className="hidden lg:flex items-center space-x-2 shrink-0">
@@ -2377,7 +3055,7 @@ ${actionItemsList.map(a => `| ${a.description} | ${a.assignee} | ${a.due_date ||
                 <div className="flex items-center space-x-2 shrink-0">
                   <button
                     type="button"
-                    onClick={onLeave}
+                    onClick={handleEndCallOrLeave}
                     className="px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 rounded-xl font-extrabold bg-rose-600 hover:bg-rose-500 text-white text-xs flex items-center space-x-1.5 transition shadow-lg shadow-rose-950/50 cursor-pointer"
                     title="Leave or End Conference"
                   >

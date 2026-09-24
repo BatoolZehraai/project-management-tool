@@ -127,7 +127,7 @@ export default function StageFilesView({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
           {/* Stage Selector */}
           <select
             value={activePhaseId || 'ALL'}
@@ -135,7 +135,7 @@ export default function StageFilesView({
               const val = e.target.value;
               setActivePhaseId(val === 'ALL' ? 'ALL' : parseInt(val));
             }}
-            className={`text-xs font-bold px-3 py-2 rounded-xl border outline-none cursor-pointer transition ${
+            className={`flex-1 sm:flex-initial text-xs font-bold px-2.5 sm:px-3 py-2 rounded-xl border outline-none cursor-pointer transition truncate min-w-0 ${
               isDarkMode
                 ? 'bg-[#16182a] border-zinc-750 text-zinc-100 hover:border-zinc-600'
                 : 'bg-slate-50 border-slate-200 text-slate-900 hover:border-slate-300 shadow-xs'
@@ -148,11 +148,11 @@ export default function StageFilesView({
           </select>
 
           {/* Unified "+ New" Action Dropdown */}
-          <div className="relative" ref={dropdownRef}>
+          <div className="relative shrink-0" ref={dropdownRef}>
             <button
               type="button"
               onClick={() => setIsDropdownOpen(prev => !prev)}
-              className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white transition shadow-md hover:shadow-lg cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0 ${
+              className={`flex items-center space-x-1 sm:space-x-1.5 px-3 sm:px-3.5 py-2 rounded-xl text-xs font-bold text-white transition shadow-md hover:shadow-lg cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0 shrink-0 ${
                 isDarkMode
                   ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-950/40'
                   : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 shadow-violet-500/20'
@@ -231,25 +231,25 @@ export default function StageFilesView({
 
       {/* Breadcrumbs & Search Bar */}
       <div
-        className={`p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 transition ${
+        className={`p-3 sm:p-3.5 rounded-xl border flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 transition ${
           isDarkMode ? 'bg-[#0f111e] border-zinc-800' : 'bg-white border-slate-200 shadow-xs'
         }`}
       >
         {/* Breadcrumb Path */}
-        <div className="flex items-center space-x-1.5 text-xs font-bold">
+        <div className="flex items-center space-x-1.5 text-xs font-bold overflow-x-auto scrollbar-none py-0.5">
           {stageBreadcrumbs.map((crumb, idx) => (
             <React.Fragment key={crumb.id || 'root'}>
-              {idx > 0 && <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />}
+              {idx > 0 && <ChevronRight className="h-3.5 w-3.5 text-zinc-500 shrink-0" />}
               <button
                 type="button"
                 onClick={() => onNavigateBreadcrumb(idx)}
-                className={`hover:underline cursor-pointer flex items-center space-x-1 ${
+                className={`hover:underline cursor-pointer flex items-center space-x-1 whitespace-nowrap shrink-0 ${
                   idx === stageBreadcrumbs.length - 1
                     ? isDarkMode ? 'text-purple-400 font-extrabold' : 'text-violet-700 font-extrabold'
                     : 'text-zinc-400'
                 }`}
               >
-                {idx === 0 && <FolderOpen className="h-3.5 w-3.5 mr-0.5" />}
+                {idx === 0 && <FolderOpen className="h-3.5 w-3.5 mr-0.5 shrink-0" />}
                 <span>{crumb.name}</span>
               </button>
             </React.Fragment>
@@ -257,7 +257,7 @@ export default function StageFilesView({
         </div>
 
         {/* Search Input */}
-        <div className="relative min-w-[220px]">
+        <div className="relative w-full sm:w-64 shrink-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
           <input
             type="text"
@@ -275,7 +275,7 @@ export default function StageFilesView({
 
       {/* File List / Grid */}
       <div
-        className={`rounded-2xl border p-4 sm:p-5 shadow-xl transition ${
+        className={`rounded-2xl border p-3.5 sm:p-5 shadow-xl transition ${
           isDarkMode ? 'bg-[#0e101d] border-zinc-800/80' : 'bg-white border-slate-200 shadow-md'
         }`}
       >
@@ -292,7 +292,7 @@ export default function StageFilesView({
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
             {filteredFiles.map(f => (
               <div
                 key={f.id}
@@ -301,20 +301,16 @@ export default function StageFilesView({
                     onNavigateBreadcrumb(stageBreadcrumbs.length, f);
                   }
                 }}
-                className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between group ${
+                className={`p-3 sm:p-3.5 rounded-xl border transition-all flex flex-col justify-between group ${
                   f.is_folder ? 'cursor-pointer' : ''
                 } ${
                   isDarkMode
                     ? f.is_folder
-                    : 'bg-[#151726]/80 border-zinc-800 hover:border-purple-500/40 hover:bg-[#1a1d30]'
-                } ${
-                  isDarkMode && f.is_folder ? 'bg-amber-950/10 border-amber-900/30 hover:border-amber-600/60 hover:bg-amber-950/20' : ''
-                } ${
-                  !isDarkMode
-                    ? f.is_folder
+                      ? 'bg-amber-950/15 border-amber-900/30 hover:border-amber-600/60 hover:bg-amber-950/25'
+                      : 'bg-[#151726]/80 border-zinc-800 hover:border-purple-500/40 hover:bg-[#1a1d30]'
+                    : f.is_folder
                       ? 'bg-amber-50/40 border-amber-200 hover:border-amber-300 hover:bg-amber-50/80 shadow-xs'
                       : 'bg-slate-50/80 hover:bg-white border-slate-200 hover:border-violet-300 shadow-xs'
-                    : ''
                 }`}
               >
                 <div className="flex items-start space-x-2.5">
@@ -331,7 +327,7 @@ export default function StageFilesView({
                   </div>
                 </div>
 
-                <div className="mt-3 pt-2 border-t border-inherit flex items-center justify-between text-[10px]">
+                <div className="mt-2.5 pt-2 border-t border-inherit flex items-center justify-between text-[10px]">
                   <span className="text-zinc-500 truncate max-w-[90px] font-medium">{f.uploaded_by_name || 'Corporate User'}</span>
                   <div className="flex items-center space-x-1" onClick={(e) => e.stopPropagation()}>
                     {!f.is_folder && (

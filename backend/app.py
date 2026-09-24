@@ -2555,6 +2555,23 @@ def get_project_meetings(current_user, project_id):
     phase_id = request.args.get('phase_id')
     status = request.args.get('status')
     
+    # Auto-prune abandoned instant meetings with no MoM and no active participants in room
+    now = datetime.datetime.utcnow()
+    stale_instants = Meeting.query.filter_by(project_id=project_id, status='IN_PROGRESS').all()
+    cleaned = False
+    for sim in stale_instants:
+        if sim.mom is None:
+            room_pres = MEETING_PRESENCE.get(sim.room_name, {})
+            # If no live participants in presence registry or created > 10 mins ago without MoM
+            if len(room_pres) == 0:
+                db.session.delete(sim)
+                cleaned = True
+    if cleaned:
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    
     query = Meeting.query.filter_by(project_id=project_id)
     if phase_id and phase_id != 'ALL':
         try:
@@ -2596,6 +2613,22 @@ def create_project_meeting(current_user, project_id):
     duration = int(data.get('duration_minutes') or 30)
     is_instant = bool(data.get('is_instant', False))
     
+    # -------------------------------------------------------------
+    # INSTANT MEETING SMART REUSE: Avoid duplicating empty rooms
+    # -------------------------------------------------------------
+    if is_instant:
+        existing_instant = Meeting.query.filter_by(
+            project_id=project_id,
+            created_by_id=current_user.id,
+            status='IN_PROGRESS'
+        ).order_by(Meeting.created_at.desc()).first()
+        
+        if existing_instant and existing_instant.mom is None:
+            existing_instant.scheduled_at = datetime.datetime.utcnow()
+            existing_instant.updated_at = datetime.datetime.utcnow()
+            db.session.commit()
+            return jsonify(existing_instant.to_dict()), 200
+
     # Scheduled at time parsing
     scheduled_at_str = data.get('scheduled_at')
     if scheduled_at_str and not is_instant:
@@ -2780,6 +2813,65 @@ def leave_meeting_presence(room_name, participant_id):
     if room_name in MEETING_PRESENCE and str(participant_id) in MEETING_PRESENCE[room_name]:
         del MEETING_PRESENCE[room_name][str(participant_id)]
     return jsonify({'success': True})
+
+# In-memory WebRTC Signaling Registry: room_name -> [ { id, from_id, to_id, type, payload, ts } ]
+MEETING_SIGNALS = {}
+MEETING_SIGNAL_COUNTER = 0
+
+@app.route('/api/meetings/public/<string:room_name>/signal', methods=['POST'])
+def send_meeting_signal(room_name):
+    global MEETING_SIGNAL_COUNTER
+    now_ts = time.time()
+    data = request.get_json() or {}
+    from_id = str(data.get('from_id') or '')
+    to_id = str(data.get('to_id') or 'broadcast')
+    sig_type = str(data.get('type') or '')
+    payload = data.get('payload')
+
+    if not from_id or not sig_type or payload is None:
+        return jsonify({'error': 'Missing required signal fields'}), 400
+
+    if room_name not in MEETING_SIGNALS:
+        MEETING_SIGNALS[room_name] = []
+
+    MEETING_SIGNAL_COUNTER += 1
+    sig_entry = {
+        'id': MEETING_SIGNAL_COUNTER,
+        'from_id': from_id,
+        'to_id': to_id,
+        'type': sig_type,
+        'payload': payload,
+        'ts': now_ts
+    }
+    MEETING_SIGNALS[room_name].append(sig_entry)
+
+    # Prune signals older than 60s or keep maximum 250 signals per room
+    if len(MEETING_SIGNALS[room_name]) > 250 or (MEETING_SIGNALS[room_name] and now_ts - MEETING_SIGNALS[room_name][0]['ts'] > 60):
+        MEETING_SIGNALS[room_name] = [
+            s for s in MEETING_SIGNALS[room_name][-200:]
+            if now_ts - s['ts'] < 60
+        ]
+
+    return jsonify({'success': True, 'signal_id': sig_entry['id']})
+
+@app.route('/api/meetings/public/<string:room_name>/signal/poll/<string:participant_id>', methods=['GET'])
+def poll_meeting_signals(room_name, participant_id):
+    last_id = int(request.args.get('last_id', 0))
+    room_signals = MEETING_SIGNALS.get(room_name, [])
+
+    relevant_signals = [
+        s for s in room_signals
+        if s['id'] > last_id
+        and (s['to_id'] == str(participant_id) or s['to_id'] == 'broadcast')
+        and s['from_id'] != str(participant_id)
+    ]
+
+    current_max_id = max([s['id'] for s in room_signals], default=last_id)
+
+    return jsonify({
+        'signals': relevant_signals,
+        'max_id': current_max_id
+    })
 
 @app.route('/api/meetings/<int:meeting_id>/invite', methods=['POST'])
 @app.route('/api/meetings/public/<string:room_name>/invite', methods=['POST'])

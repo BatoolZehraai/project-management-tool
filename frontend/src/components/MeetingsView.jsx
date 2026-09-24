@@ -426,7 +426,7 @@ export default function MeetingsView({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
           {/* Stage Selector */}
           <select
             value={activePhaseId || 'ALL'}
@@ -434,13 +434,13 @@ export default function MeetingsView({
               const val = e.target.value;
               setActivePhaseId(val === 'ALL' ? 'ALL' : parseInt(val));
             }}
-            className={`text-xs font-bold px-3 py-2 rounded-xl border outline-none cursor-pointer transition ${
+            className={`text-xs font-bold px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border outline-none cursor-pointer transition ${
               isDarkMode
                 ? 'bg-[#16182a] border-zinc-750 text-zinc-100 hover:border-zinc-600'
                 : 'bg-slate-50 border-slate-200 text-slate-900 hover:border-slate-300 shadow-xs'
             }`}
           >
-            <option value="ALL">All Stages Meetings</option>
+            <option value="ALL">All Stages</option>
             {phases.map(ph => (
               <option key={ph.id} value={ph.id}>{ph.name}</option>
             ))}
@@ -450,29 +450,29 @@ export default function MeetingsView({
           <button
             type="button"
             onClick={() => setShowJoinByIdModal(true)}
-            className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+            className={`flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
               isDarkMode
                 ? 'bg-cyan-950/30 border-cyan-800/50 text-cyan-300 hover:bg-cyan-900/40 hover:text-white'
                 : 'bg-cyan-50 border-cyan-200 text-cyan-700 hover:bg-cyan-100 shadow-xs'
             }`}
             title="Join an active meeting using its Room ID or Link"
           >
-            <Link2 className="h-4 w-4 text-cyan-400" />
-            <span className="hidden sm:inline">Join by ID</span>
+            <Link2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-cyan-400" />
+            <span>Join</span>
           </button>
 
           {/* Start Instant Meeting */}
           <button
             type="button"
             onClick={() => handleCreateMeeting(true)}
-            className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+            className={`flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
               isDarkMode
                 ? 'bg-zinc-850 border-zinc-700 text-zinc-200 hover:bg-zinc-750 hover:text-white'
                 : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200 shadow-xs'
             }`}
           >
-            <PlayCircle className="h-4 w-4 text-emerald-400" />
-            <span className="hidden sm:inline">Instant Meeting</span>
+            <PlayCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-400" />
+            <span>Instant</span>
           </button>
 
           {/* Schedule Meeting Button */}
@@ -482,29 +482,29 @@ export default function MeetingsView({
               resetForm();
               setShowScheduleModal(true);
             }}
-            className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white transition shadow-md hover:shadow-lg cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0 ${
+            className={`flex items-center space-x-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold text-white transition shadow-md hover:shadow-lg cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0 ${
               isDarkMode
                 ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-950/40'
                 : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 shadow-violet-500/20'
             }`}
           >
             <CalendarPlus className="h-4 w-4" />
-            <span>Schedule Meeting</span>
+            <span>Schedule</span>
           </button>
         </div>
       </div>
 
       {/* Tabs & Search Bar */}
       <div
-        className={`p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 transition ${
+        className={`p-3 sm:p-3.5 rounded-xl border flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 transition ${
           isDarkMode ? 'bg-[#0f111e] border-zinc-800' : 'bg-white border-slate-200 shadow-xs'
         }`}
       >
-        <div className="flex items-center space-x-1 bg-inherit">
+        <div className="flex items-center space-x-1 bg-inherit overflow-x-auto scrollbar-none py-0.5">
           <button
             type="button"
             onClick={() => setActiveSubTab('upcoming')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center space-x-1.5 ${
+            className={`px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
               activeSubTab === 'upcoming'
                 ? isDarkMode
                   ? 'bg-purple-600 text-white shadow-xs'
@@ -515,13 +515,13 @@ export default function MeetingsView({
             }`}
           >
             <Calendar className="h-3.5 w-3.5" />
-            <span>Upcoming & Active ({upcomingMeetings.length})</span>
+            <span>Upcoming ({upcomingMeetings.length})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveSubTab('past')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center space-x-1.5 ${
+            className={`px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
               activeSubTab === 'past'
                 ? isDarkMode
                   ? 'bg-purple-600 text-white shadow-xs'
@@ -532,18 +532,18 @@ export default function MeetingsView({
             }`}
           >
             <FileText className="h-3.5 w-3.5" />
-            <span>Past MoMs & Archive ({pastMeetings.length})</span>
+            <span>Past MoMs ({pastMeetings.length})</span>
           </button>
         </div>
 
         {/* Search */}
-        <div className="relative min-w-[220px]">
+        <div className="relative w-full sm:w-64 shrink-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search meetings by title, agenda..."
+            placeholder="Search meetings by title..."
             className={`w-full text-xs pl-8.5 pr-3 py-1.5 rounded-xl border outline-none transition focus:ring-1 ${
               isDarkMode
                 ? 'bg-[#151728] border-zinc-750 text-zinc-100 focus:border-purple-500 focus:ring-purple-500/30'

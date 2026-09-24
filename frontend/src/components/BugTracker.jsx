@@ -351,13 +351,13 @@ export default function BugTracker({ activeProject, isDarkMode, authUser, onBack
       isDarkMode ? 'bg-[#090a12] text-zinc-100' : 'bg-[#f8fafc] text-slate-900'
     }`}>
       {/* Top Breadcrumb & Actions Bar */}
-      <div className={`border-b sticky top-0 z-40 backdrop-blur-md px-4 sm:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4 ${
+      <div className={`border-b sticky top-0 z-40 backdrop-blur-md px-3 sm:px-8 py-2.5 sm:py-3.5 flex flex-wrap items-center justify-between gap-3 ${
         isDarkMode ? 'bg-[#0e0f1a]/95 border-zinc-800 shadow-md shadow-black/20' : 'bg-white/95 border-slate-200 shadow-xs'
       }`}>
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2.5 min-w-0">
           <button
             onClick={onBack}
-            className={`p-1.5 rounded-lg border transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold ${
+            className={`p-1.5 rounded-lg border transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold shrink-0 ${
               isDarkMode 
                 ? 'bg-zinc-900 hover:bg-zinc-800 border-zinc-750 text-zinc-300' 
                 : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
@@ -367,29 +367,29 @@ export default function BugTracker({ activeProject, isDarkMode, authUser, onBack
             <span className="hidden sm:inline">Back to Board</span>
           </button>
 
-          <div className="flex items-center space-x-2">
-            <div className={`p-2 rounded-xl border flex items-center justify-center ${
+          <div className="flex items-center space-x-2 min-w-0">
+            <div className={`p-2 rounded-xl border flex items-center justify-center shrink-0 ${
               isDarkMode ? 'bg-rose-950/40 border-rose-800/40 text-rose-400' : 'bg-rose-50 border-rose-200 text-rose-600'
             }`}>
-              <Bug className="h-5 w-5" />
+              <Bug className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-bold tracking-tight">Defect & Bug Lifecycle Governance</h1>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h1 className="text-sm sm:text-base font-bold tracking-tight truncate">Defects & Bugs</h1>
+                <span className={`text-[9.5px] font-bold px-1.5 py-0.2 rounded-full border ${
                   isDarkMode ? 'bg-purple-950/40 border-purple-800/40 text-purple-300' : 'bg-purple-50 border-purple-200 text-purple-700'
                 }`}>
-                  ISO 20022 Audit Ready
+                  Governance
                 </span>
               </div>
-              <p className={`text-xs ${isDarkMode ? 'text-zinc-400' : 'text-slate-500'}`}>
-                Active Workspace: <span className="font-semibold">{activeProject?.name || 'Loading Project...'}</span>
+              <p className={`text-[11px] truncate ${isDarkMode ? 'text-zinc-400' : 'text-slate-500'}`}>
+                Workspace: <span className="font-semibold">{activeProject?.name || 'Loading Project...'}</span>
               </p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2.5">
+        <div className="flex items-center space-x-2 shrink-0">
           <button
             onClick={fetchData}
             title="Refresh Defect Register"
@@ -402,7 +402,7 @@ export default function BugTracker({ activeProject, isDarkMode, authUser, onBack
 
           <button
             onClick={() => setIsReportModalOpen(true)}
-            className="px-3.5 py-2 rounded-lg bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white text-xs font-bold shadow-md shadow-rose-600/20 flex items-center gap-1.5 transition cursor-pointer"
+            className="px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white text-xs font-bold shadow-md shadow-rose-600/20 flex items-center gap-1.5 transition cursor-pointer"
           >
             <Plus className="h-4 w-4" />
             <span>Report Defect</span>
@@ -410,11 +410,11 @@ export default function BugTracker({ activeProject, isDarkMode, authUser, onBack
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-8 pt-6 space-y-6">
+      <div className="max-w-7xl mx-auto px-3 sm:px-8 pt-4 sm:pt-6 space-y-4 sm:space-y-6">
         {/* KPI Metric Summary Tiles */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4">
           {/* Total */}
-          <div className={`p-4 rounded-xl border flex flex-col justify-between transition ${
+          <div className={`p-3 sm:p-4 rounded-xl border flex flex-col justify-between transition ${
             isDarkMode ? 'bg-[#0f111d] border-zinc-800' : 'bg-white border-slate-200 shadow-xs'
           }`}>
             <div className="flex items-center justify-between text-xs font-medium text-zinc-400">
@@ -422,7 +422,7 @@ export default function BugTracker({ activeProject, isDarkMode, authUser, onBack
               <Bug className="h-4 w-4 text-purple-400" />
             </div>
             <div className="mt-2 flex items-baseline justify-between">
-              <span className="text-2xl font-black">{metrics.total}</span>
+              <span className="text-xl sm:text-2xl font-black">{metrics.total}</span>
               <span className="text-[10px] text-zinc-500 font-mono">Registered</span>
             </div>
           </div>

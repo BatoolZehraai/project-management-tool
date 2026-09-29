@@ -13,8 +13,6 @@ An enterprise banking Software Development Life Cycle (SDLC) Governance Platform
 
 ## Table of Contents
 
-## Table of Contents
-
 1. [System Architecture](#system-architecture)
 2. [Key Capabilities & Core Modules](#key-capabilities--core-modules)
    - [Executive Overview & Delivery Analytics](#1-executive-overview--delivery-analytics)
@@ -479,7 +477,8 @@ sdlc-governance-engine/
 ```
 
 ---
-### License & Compliance
----
+
+## License & Compliance
+
 Developed for internal regulatory operations at Bank AL Habib Limited. Designed to comply with ISO 20022, PCI-DSS, and enterprise regulatory compliance frameworks.
 

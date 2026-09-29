@@ -72,11 +72,6 @@ The application adopts a decoupled, high-performance client-server architecture:
 │          PostgreSQL (Production)  ◄─── Automatic Fallback ───►  SQLite                 │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
----
-
-## Key Capabilities & Core Modules
-
 ---
 
 ## Key Capabilities & Core Modules
@@ -204,7 +199,7 @@ The application adopts a decoupled, high-performance client-server architecture:
 │ avatar_url: String(300)         │   │   │          ProjectPhase           │
 │ phone / bio: String             │   │   ├─────────────────────────────────┤
 └────────────────┬────────────────┘   │   │ id: Integer (PK)                │
-│ 1:N                │   │ project_id: Integer (FK)        │
+                 │ 1:N                │   │ project_id: Integer (FK)        │
 ┌────────────────▼────────────────┐   │   │ name: String(100)               │
 │              Task               │   │   │ governing_department: String    │
 ├─────────────────────────────────┤   │   │ phase_order: Integer            │
@@ -218,27 +213,42 @@ The application adopts a decoupled, high-performance client-server architecture:
 │ checklist_json: Text            │   │   │ id: Integer (PK)                │
 │ due_date: String                │   │   │ project_id: Integer (FK)        │
 └────────────────┬────────────────┘   │   │ phase_id: Integer (FK)          │
-│ 1:N                │   │ task_id: Integer (FK, Optional) │
+                 │ 1:N                │   │ task_id: Integer (FK, Optional) │
 ┌────────────────▼────────────────┐   │   │ title: String(200)              │
-│            Meeting              │   │   │ description: Text               │
+│            Comment              │   │   │ description: Text               │
 ├─────────────────────────────────┤   │   │ severity: CRITICAL|HIGH|MED|LOW │
 │ id: Integer (PK)                │   │   │ status: NEW|ASSIGNED|IN_PROG... │
-│ project_id: Integer (FK)        │   │   │ reported_by_id: Integer (FK)    │
-│ phase_id: Integer (FK, Optional)│   │   │ assigned_to_id: Integer (FK)    │
-│ title: String(200)              │   │   │ created_at / updated_at         │
-│ scheduled_at: DateTime          │   │   └────────────────┬────────────────┘
-│ mom_notes: Text                 │   │                    │ Audit Linked
-│ status: UPCOMING|COMPLETED      │   │   ┌────────────────▼────────────────┐
-└─────────────────────────────────┘   │   │           ActivityLog           │
-│   ├─────────────────────────────────┤
-└───┤ id: Integer (PK)                │
-│ project_id: Integer (FK)        │
-│ bug_id: Integer (FK, Optional)  │
-│ user_id / user_name / email     │
-│ action_type / details           │
-│ previous_state / new_state      │
-│ created_at: DateTime            │
-└─────────────────────────────────┘
+│ task_id: Integer (FK)           │   │   │ reported_by_id: Integer (FK)    │
+│ author_id: Integer (FK)         │   │   │ assigned_to_id: Integer (FK)    │
+│ body: Text                      │   │   │ created_at / updated_at         │
+│ created_at: DateTime            │   │   └────────────────┬────────────────┘
+└─────────────────────────────────┘   │                    │
+                                      │   ┌────────────────▼────────────────┐
+┌─────────────────────────────────┐   │   │            Meeting              │
+│            StageFile            │   │   ├─────────────────────────────────┤
+├─────────────────────────────────┤   │   │ id: Integer (PK)                │
+│ id: Integer (PK)                │   │   │ project_id: Integer (FK)        │
+│ project_id: Integer (FK)        │   │   │ phase_id: Integer (FK, Optional)│
+│ phase_id: Integer (FK, Optional)│   │   │ title: String(200)              │
+│ filename: String(255)           │   │   │ scheduled_at: DateTime          │
+│ file_path: String(500)          │   │   │ mom_notes: Text                 │
+│ file_size: Integer              │   │   │ status: UPCOMING|COMPLETED      │
+│ is_folder: Boolean              │   │   │ host_id: Integer (FK)           │
+│ parent_id: Integer (FK, Self)   │   │   └────────────────┬────────────────┘
+│ uploaded_by_id: Integer (FK)────┼───┤                    │
+└─────────────────────────────────┘   │   ┌────────────────▼────────────────┐
+                                      │   │           ActivityLog           │
+                                      │   ├─────────────────────────────────┤
+                                      └───┤ id: Integer (PK)                │
+                                          │ project_id: Integer (FK)        │
+                                          │ bug_id: Integer (FK, Optional)  │
+                                          │ task_id: Integer (FK, Optional) │
+                                          │ user_id / user_name / email     │
+                                          │ action_type / details           │
+                                          │ previous_state / new_state      │
+                                          │ created_at: DateTime            │
+                                          └─────────────────────────────────┘
+                                          
 ```
 
 ---
@@ -469,6 +479,7 @@ sdlc-governance-engine/
 ```
 
 ---
-License & Compliance
-Developed for internal regulatory operations at Bank AL Habib Limited. Designed to comply with ISO 20022, PCI-DSS, and enterprise regulatory compliance frameworks.
+### License & Compliance
 ---
+Developed for internal regulatory operations at Bank AL Habib Limited. Designed to comply with ISO 20022, PCI-DSS, and enterprise regulatory compliance frameworks.
+

@@ -13,16 +13,22 @@ An enterprise banking Software Development Life Cycle (SDLC) Governance Platform
 
 ## Table of Contents
 
+## Table of Contents
+
 1. [System Architecture](#system-architecture)
 2. [Key Capabilities & Core Modules](#key-capabilities--core-modules)
-   - [Department Stage Ownership & Governance Boundary](#1-department-stage-ownership--governance-boundary)
-   - [Multi-Tier Role-Based Access Control (RBAC)](#2-multi-tier-role-based-access-control-rbac)
-   - [Kanban Board, Stage Files & Activity Audit Log](#3-kanban-board-stage-files--activity-audit-log)
-   - [Defect & Bug Lifecycle Tracking Module](#4-defect--bug-lifecycle-tracking-module)
-   - [Super Admin User Management Console](#5-super-admin-user-management-console)
-   - [API Management & Chained Execution Studio](#6-api-management--chained-execution-studio)
-   - [User Profile & Credential Management](#7-user-profile--credential-management)
-   - [Dark & Light Theme Parity](#8-dark--light-theme-parity)
+   - [Executive Overview & Delivery Analytics](#1-executive-overview--delivery-analytics)
+   - [Department Stage Ownership & Governance Boundary](#2-department-stage-ownership--governance-boundary)
+   - [Multi-Tier Role-Based Access Control (RBAC)](#3-multi-tier-role-based-access-control-rbac)
+   - [SDLC Kanban Board & Task Governance](#4-sdlc-kanban-board--task-governance)
+   - [Timeline & Milestone Schedule Planner](#5-timeline--milestone-schedule-planner)
+   - [Project Documents & Stage Repository](#6-project-documents--stage-repository)
+   - [Defect & Bug Lifecycle Tracking Module](#7-defect--bug-lifecycle-tracking-module)
+   - [API Management & Chained Execution Studio](#8-api-management--chained-execution-studio)
+   - [Corporate Video Meetings & MoM Engine](#9-corporate-video-meetings--mom-engine)
+   - [Corporate Team & Access Governance](#10-corporate-team--access-governance)
+   - [Compliance Audit Trail & Activity Feed](#11-compliance-audit-trail--activity-feed)
+   - [Theme Parity & UI Engineering](#12-theme-parity--ui-engineering)
 3. [Technology Stack](#technology-stack)
 4. [Data Models & Schema](#data-models--schema)
 5. [API Reference](#api-reference)
@@ -31,7 +37,7 @@ An enterprise banking Software Development Life Cycle (SDLC) Governance Platform
    - [Backend Setup](#backend-setup)
    - [Frontend Setup](#frontend-setup)
 7. [Default Corporate Credentials](#default-corporate-credentials)
-8. [Testing & Verification](#testing--verification)
+8. [Automated Testing & Verification](#automated-testing--verification)
 9. [Project Structure](#project-structure)
 10. [License & Compliance](#license--compliance)
 
@@ -45,19 +51,22 @@ The application adopts a decoupled, high-performance client-server architecture:
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                          Vite + React 19 + Tailwind CSS 4                              │
 │  ┌──────────────────────┬───────────────────────┬──────────────────────┬─────────────┐ │
-│  │  SDLC Kanban Board   │ Defect / Bug Tracker  │ Super Admin Console  │ API Studio  │ │
-│  │ (Stage Governance)   │  (7-State Governance) │  (User Directory)    │(Chained 2S) │ │
+│  │ Metrics & Velocity   │ Timeline / Planner    │ Kanban Governance    │ Defect Hub  │ │
+│  │ (Spline & Donut)     │ (Calendar & Agenda)   │ (Stage Boundaries)   │ (7-State)   │ │
+│  ├──────────────────────┼───────────────────────┼──────────────────────┼─────────────┤ │
+│  │ Document Repository  │ Video Meetings & MoM  │ Team & Access Gov.   │ API Studio  │ │
+│  │ (Stage File Trees)   │ (Virtual Reviews)     │ (RBAC Provisioning)  │(Chained 2S) │ │
 │  └──────────────────────┴───────────────────────┴──────────────────────┴─────────────┘ │
 └───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │ REST APIs + JWT Auth
+│ RESTful APIs + JWT Auth Bearer Tokens
 ┌───────────────────────────────────────────▼────────────────────────────────────────────┐
 │                          Flask 3.0 Application Server                                  │
 │  ┌──────────────────────┬───────────────────────┬──────────────────────┬─────────────┐ │
 │  │ Auth & RBAC Guards   │ Defect State Machine  │ Governance Controller│ CORS Proxy  │ │
-│  │ (@token_required)    │ (Transition Validation│ (Tasks, Auditing)    │ (HTTP Exec) │ │
+│  │ (@token_required)    │ (Transition Rules)    │ (Tasks, Milestones)  │ (HTTP Exec) │ │
 │  └──────────────────────┴───────────────────────┴──────────────────────┴─────────────┘ │
 └───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │ SQLAlchemy ORM
+│ SQLAlchemy ORM
 ┌───────────────────────────────────────────▼────────────────────────────────────────────┐
 │                        Relational Storage (Dual-Engine)                                │
 │          PostgreSQL (Production)  ◄─── Automatic Fallback ───►  SQLite                 │
@@ -68,92 +77,89 @@ The application adopts a decoupled, high-performance client-server architecture:
 
 ## Key Capabilities & Core Modules
 
-### 1. Department Stage Ownership & Governance Boundary
-- **Phase-Governing Teams**: Each SDLC project phase is bound to a specific governing department (e.g., *Stage 1: Business Analysis*, *Stage 2: Architecture & Design*, *Stage 3: Software Engineering*, *Stage 4: Quality Assurance*, *Stage 5: Compliance*, *Stage 6: Operations & Release*).
-- **Universal View-Only Visibility**: All authenticated corporate users can view stages, cards, and files across all departments without restriction.
+---
+
+## Key Capabilities & Core Modules
+
+### 1. Executive Overview & Delivery Analytics
+- **Live Governance KPIs**: Real-time visibility into Total Tasks, Active Workload (In Progress), Critical Defects (with live pulse indicator), and Overall Stage Completion percentage.
+- **Task Completion Velocity**: Spline trend chart tracking daily sprint throughput and delivery progression.
+- **Workflow Distribution**: Donut analytics breaking down distribution across `Completed`, `In Progress`, and `Planned / Backlog`.
+- **Task Priority Breakdown**: Proportional risk meters categorizing active deliverables across `Critical`, `High`, `Medium`, and `Low` priorities.
+- **SDLC Stage Velocity**: Phase-by-phase completion progress across all SDLC stages (Requirements, Architecture, Implementation, VAPT, Acceptance).
+
+### 2. Department Stage Ownership & Governance Boundary
+- **Phase-Governing Teams**: Each SDLC project phase is bound to a specific governing department (e.g., *Business Analysis*, *Architecture & Design*, *Software Engineering*, *Quality Assurance*, *Compliance*, *Operations & Release*).
+- **Universal View-Only Visibility**: Authenticated users can view stages, cards, timelines, files, and specifications across all departments without restriction.
 - **Strict Mutation Enforcement**:
-  - Task cards inside a stage can only be edited, reassigned, or have status altered by:
+  - Task cards inside a stage can only be edited, reassigned, or have their status changed by:
     1. Assigned Team Members of the task.
     2. Department Heads (`DEPT_HEAD`) of the governing department.
     3. Super Administrators (`SUPER_ADMIN`).
   - Users outside the governing department receive informative view-only banners and disabled controls.
 
-### 2. Multi-Tier Role-Based Access Control (RBAC)
-- **`SUPER_ADMIN`**: Full enterprise authority. Access to User Management, project creation, stage customization, user role promotions/demotions, system resets, and audit overrides.
-- **`DEPT_HEAD`**: Departmental governance. Full write/mutation authority over tasks within stages governed by their department.
-- **`TEAM_MEMBER`**: Direct execution. Mutates assigned tasks within authorized stages; view-only across foreign stages.
+### 3. Multi-Tier Role-Based Access Control (RBAC)
+- **`SUPER_ADMIN`**: Full enterprise authority. User provisioning, directory approvals, project initialization, dynamic phase creation, system database resets, and master audit overrides.
+- **`DEPT_HEAD`**: Departmental operational authority. Full mutation control over deliverables, timelines, meetings, and defects governed by their department.
+- **`TEAM_MEMBER`**: Direct execution. Mutates assigned tasks, reports defects, and updates progress within authorized project stages; view-only access across other departments.
 
-### 3. Kanban Board, Stage Files & Activity Audit Log
-- **Kanban Board**: Drag-and-drop / 1-click status transitions across `To Do`, `In Progress`, and `Completed`.
-- **Task Modals**: Sub-task checklists with auto-calculated progress bars, priority badges (`Low`, `Medium`, `High`, `Critical`), due date management, file attachments, and threaded comments.
-- **Stage Files & Hierarchical Folder Tree**: Upload and organize requirements specifications, architecture diagrams, test matrices, and build artifacts (up to 16MB per file).
-- **Regulatory Activity Audit Log**: Real-time chronological audit trail recording task modifications, status shifts, stage transitions, and user delegations with user attribution and timestamping.
+### 4. SDLC Kanban Board & Task Governance
+- **Three-Tier Workflow Columns**: Clean visual drag-and-drop / 1-click status transitions across `PLANNED / BACKLOG`, `IN PROGRESS`, and `COMPLETED`.
+- **Card Metadata Badges**: Explicit badges for priority level, governing SDLC phase tags, target delivery date, assignee avatar pills, and sub-task progress counters.
+- **Sub-task Checklists**: Interactive checklists with real-time percentage completion calculations and dynamic visual progress bars.
+- **Phase Filter Switching**: Dropdown filtering to view all stages concurrently or scope directly down to a single department's phase.
 
-### 4. Defect & Bug Lifecycle Tracking Module
-An enterprise defect governance engine enforcing state machine progression, strict QA/Developer segregation of duties, and regulatory audit immutability:
+### 5. Timeline & Milestone Schedule Planner
+- **Dual Visual Modes**:
+  - **Grid Calendar View**: Interactive monthly calendar mapping deliverables to scheduled deadlines, flagged with color-coded priority and stage pills.
+  - **Agenda List View**: Chronological delivery itinerary grouped by month with direct status and risk indicators.
+- **Milestone Metric Banners**: Real-time month-level rollups for Total Deliverables, Active In-Progress count, Completed count, and High/Critical Risk count.
+- **Stage Scoping**: Quick filters to isolate milestones for specific SDLC governance phases.
+
+### 6. Project Documents & Stage Repository
+- **Centralized Document Vault**: Unified artifact repository storing requirements specifications (BRD/SRS), PCI-DSS threat models, architecture schemas, and audit evidence.
+- **Hierarchical Directory Tree**: Create folders and sub-folders scoped globally or per SDLC Stage.
+- **Document Metadata & Management**: Displays file extension tags, file size footprint, author attribution, 1-click downloads, and deletion safeguards.
+
+### 7. Defect & Bug Lifecycle Tracking Module
 - **7-State Lifecycle Progression**:
-  - `NEW` ➔ `ASSIGNED` ➔ `IN_PROGRESS` ➔ `RESOLVED` ➔ `VERIFIED` ➔ `CLOSED` (or `REOPENED`).
-- **Strict Role-Based State Transition Governance**:
-  - **Developers / Assignees**: Authorized to move defects from `ASSIGNED` ➔ `IN_PROGRESS` ➔ `RESOLVED`.
-  - **QA / Quality Assurance & Reporters**: Strictly empowered to verify (`RESOLVED` ➔ `VERIFIED`), close (`VERIFIED` ➔ `CLOSED`), or reject/reopen (`RESOLVED` ➔ `REOPENED` / `VERIFIED` ➔ `REOPENED`). Developers attempting unauthorized verification or closure receive `403 Forbidden`.
-  - **Super Administrators (`SUPER_ADMIN`)**: Possess master transition override authority across all states.
-- **Interactive Visual Lifecycle Stepper & Timeline Modal**:
-  - 6-step progress pipeline displaying live status indicators, next valid target actions with role badges, and full chronological audit logs detailing exact timestamps, transition authors, and previous/new states.
-- **Multi-View Defect Management Console**:
-  - **Kanban Board**: Drag-and-drop / column-based defect cards grouped by active state (`NEW`, `ASSIGNED`, `IN PROGRESS`, `RESOLVED`, `VERIFIED`, `CLOSED`, `REOPENED`).
-  - **Grid View**: Compact 2-column cards featuring severity badges, phase indicators, assignees, and quick status actions.
-  - **Table View**: Dense data grid displaying severity, title, stage, reporter, assignee, created date, and action triggers.
-- **KPI Summary Analytics**:
-  - Real-time KPI tiles for Total Defect Count, Critical Severity (with pulse animation), Active In-Progress, Resolved & Verified, Closed, and Resolution Velocity percentage.
-- **Multi-Dimensional Filtering & Search**:
-  - Instant text search across defect title and description.
-  - Severity filter (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`).
-  - Status filter (`ALL`, `OPEN`, `RESOLVED`, `CLOSED`, etc.).
-  - SDLC Phase filter and Assignee filter.
-- **Immutable Audit Logging**:
-  - Every single state transition, status update, and defect creation is automatically written to `ActivityLog` with the associated `bug_id`, `bug_title`, author, and timestamp.
+  - `NEW` ➔ `ASSIGNED` ➔ `IN_PROGRESS` ➔ `RESOLVED` ➔ `VERIFIED` ➔ `CLOSED` (with rejection loops to `REOPENED`).
+- **Segregation of Duties (SOD)**:
+  - **Developers**: Can accept and resolve defects (`ASSIGNED` ➔ `IN_PROGRESS` ➔ `RESOLVED`).
+  - **QA Leads & Reporters**: Sole authority to verify (`VERIFIED`), formally close (`CLOSED`), or reject solutions (`REOPENED`). Developers attempting unauthorized verification receive `403 Forbidden`.
+  - **Super Admins**: Full transition override permissions.
+- **Multi-Console Switcher**: Toggle defect views across **Kanban State Board**, **Compact Grid Cards**, or **Dense Tabular Grid**.
+- **Defect Metrics**: Instant count tiles for Total Defects, Critical Severity, In Triage/Fix, QA Verified, and Resolution Velocity Rate.
 
-### 5. Super Admin User Management Console
-- Accessible **strictly to Super Admins** through the navbar `User Management` action.
-- **KPI Summary Metrics**: Total Users, Active / Approved Accounts, Pending Approval Queue (with alert indicator), and Governing Departments.
-- **Multi-Dimensional Directory Filters**:
-  - Text search by employee name, email, or department.
-  - Department dropdown filter.
-  - Role filter (`SUPER ADMIN`, `DEPT HEAD`, `TEAM MEMBER`).
-  - Status tabs (`ALL`, `APPROVED`, `PENDING`, `REJECTED`).
-- **Full Employee CRUD**:
-  - `+ New User Entry` drawer to directly register and provision corporate staff.
-  - Inline editing of Name, Department, Role, and Status.
-  - 1-click Approve and Reject triggers for registration requests.
-  - Safe employee deletion with task unassignment and active admin self-deletion guard.
-
-### 6. API Management & Chained Execution Studio
-An Insomnia/Postman-style execution studio accessible on a dedicated page directly from both the public portal and the authenticated dashboard:
-- **Environment Management**:
-  - Create and toggle between **Local Backend**, **Development (Sandbox)**, **Staging (UAT)**, and **Production (Live)**.
-  - Variable key-value table editor with dynamic syntax interpolation: `{{baseUrl}}/resource`, `{{apiKey}}`, `{{step1_token}}`.
+### 8. API Management & Chained Execution Studio
+- **Multi-Environment Vault**: Switch dynamically between `Local Backend`, `Development (Sandbox)`, `Staging (UAT)`, and `Production (Live)`.
+- **Dynamic Syntax Interpolation**: Reusable variable substitution using double curly brace syntax (`{{baseUrl}}`, `{{token}}`).
 - **2-Step Dependent Chained Pipeline**:
-  - **Step 1 (Setup / Auth Endpoint)**: HTTP method selector (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`), URL bar, Headers, Query Params, JSON body editor with "Prettify JSON", and **Variable Extraction Rules** (e.g. extract `response.body.token` into runtime variable `step1_token`).
-  - **Step 2 (Downstream Endpoint)**: **Strictly Locked by default**. Displays an amber lock overlay explaining dependency requirements. Automatically unlocks upon Step 1 succeeding with `HTTP 200–299` and resolving required variables.
-  - **Dynamic Injection**: Downstream endpoint dynamically consumes `Bearer {{step1_token}}` in headers or URL parameters.
-- **Headless Pipeline Runner ("Run Chained Pipeline")**:
-  - 1-click sequential automation: Step 1 -> captures output -> extracts variables -> injects into runtime context -> executes Step 2.
-  - Halts execution immediately if Step 1 fails, displaying an error log.
-- **Server-Side CORS Proxy (`POST /api/proxy/execute`)**:
-  - Dispatches HTTP requests through Python `requests`, completely bypassing browser CORS restrictions.
-  - Returns millisecond-accurate latency (`time_ms`), payload size (`size_bytes`), HTTP status, headers, and parsed data.
+  - **Step 1 (Auth / Token Issuer)**: Dispatches credentials and extracts target response keys (e.g., `response.body.token` into runtime variable `step1_token`).
+  - **Step 2 (Downstream Endpoint)**: Locked by default; automatically unlocks when Step 1 succeeds and injects `Bearer {{step1_token}}` into headers or URLs.
+- **Server-Side CORS Proxy**: Built-in backend proxy (`POST /api/proxy/execute`) that forwards external HTTP/HTTPS calls via Python `requests`, bypassing browser CORS locks while capturing response latency (`time_ms`) and payload size (`size_bytes`).
 
-### 7. User Profile & Credential Management
-- Accessible from the profile pill in the navbar.
-- Upload custom profile pictures/avatars with instant preview and server-side cropping.
-- Edit Full Name, Corporate Phone, Governing Department, and Professional Bio.
-- Secure Password Update with current password verification and confirmation validation.
+### 9. Corporate Video Meetings & MoM Engine
+- **Virtual Stage Gate Reviews**: Integrated virtual meeting rooms for architectural review boards (ARB), sprint sign-offs, and audit discussions.
+- **Instant & Scheduled Sessions**: Launch ad-hoc governance meetings (`Instant`) or schedule forward-looking review milestones with stage linkage.
+- **Minutes of Meeting (MoM) Archiving**: Immutable recording of discussions, compliance decisions, and action items accessible under the `Past MoMs` repository.
 
-### 8. Dark & Light Theme Parity
-- Designed with dual-theme styling using Tailwind CSS.
-- **Dark Mode**: Deep `#090a12` dark background with purple and emerald accents.
-- **Light Mode**: Ultra-crisp `#f8fafc` background with slate and violet borders.
-- System-wide theme persistence in `localStorage`.
+### 10. Corporate Team & Access Governance
+- **Employee Directory Console**: Centralized user provisioning drawer (`+ Add Corporate User`) and management console.
+- **Multi-Dimensional Filters**: Filter corporate staff by department or search directly by employee name and corporate email.
+- **Lifecycle & Permission Management**: Inline role assignment (`SUPER_ADMIN`, `DEPT_HEAD`, `TEAM_MEMBER`), status management (`APPROVED`, `PENDING`, `REJECTED`), and safe employee offboarding with active admin self-deletion guards.
+
+### 11. Compliance Audit Trail & Activity Feed
+- **ISO 20022 Ready Ledger**: Permanent append-only database audit log recording all phase shifts, state transitions, deliverable modifications, and user identity events.
+- **Multi-Dimensional Audit Filtering**: Filter logs by action type (`All Activity`, `Status Shifts`, `Stage Moves`, `Creations`, `Task Edits`).
+- **Chronological Timeframe Scoping**: Preset time filters (`Last 7 Days`, `Last 30 Days`, `Archive >30d`) with expandable historical activity drawers.
+
+### 12. Theme Parity & UI Engineering
+- **Dual Corporate Themes**:
+  - **Light Theme**: Clean `#f8fafc` banking portal styling with crisp border hierarchy and subtle indigo/violet accents.
+  - **Dark Theme**: Low-glare `#090a12` dark surface with emerald and purple status accents.
+- **Collapsible Responsive Navigation**: Fixed sidebar navigation with toggleable compact mode, displaying corporate branding and active workspace status.
+- **Persistent State**: Theme preference and sidebar collapse state stored across sessions in `localStorage`.
 
 ---
 
@@ -198,7 +204,7 @@ An Insomnia/Postman-style execution studio accessible on a dedicated page direct
 │ avatar_url: String(300)         │   │   │          ProjectPhase           │
 │ phone / bio: String             │   │   ├─────────────────────────────────┤
 └────────────────┬────────────────┘   │   │ id: Integer (PK)                │
-                 │ 1:N                │   │ project_id: Integer (FK)        │
+│ 1:N                │   │ project_id: Integer (FK)        │
 ┌────────────────▼────────────────┐   │   │ name: String(100)               │
 │              Task               │   │   │ governing_department: String    │
 ├─────────────────────────────────┤   │   │ phase_order: Integer            │
@@ -208,31 +214,31 @@ An Insomnia/Postman-style execution studio accessible on a dedicated page direct
 │ title: String(150)              │   │                    │ 1:N
 │ priority: Low|Med|High|Critical │   │   ┌────────────────▼────────────────┐
 │ assignee_id: Integer (FK)───────┼───┤   │              Bug                │
-│ status: To Do|In Prog|Completed │   │   ├─────────────────────────────────┤
+│ status: Planned|In Prog|Done    │   │   ├─────────────────────────────────┤
 │ checklist_json: Text            │   │   │ id: Integer (PK)                │
 │ due_date: String                │   │   │ project_id: Integer (FK)        │
 └────────────────┬────────────────┘   │   │ phase_id: Integer (FK)          │
-                 │ 1:N                │   │ task_id: Integer (FK, Optional) │
+│ 1:N                │   │ task_id: Integer (FK, Optional) │
 ┌────────────────▼────────────────┐   │   │ title: String(200)              │
-│            Comment              │   │   │ description: Text               │
+│            Meeting              │   │   │ description: Text               │
 ├─────────────────────────────────┤   │   │ severity: CRITICAL|HIGH|MED|LOW │
 │ id: Integer (PK)                │   │   │ status: NEW|ASSIGNED|IN_PROG... │
-│ task_id: Integer (FK)           │   │   │ reported_by_id: Integer (FK)    │
-│ author_id: Integer (FK)         │   │   │ assigned_to_id: Integer (FK)    │
-│ body: Text                      │   │   │ created_at / updated_at         │
-│ created_at: DateTime            │   │   └────────────────┬────────────────┘
-└─────────────────────────────────┘   │                    │ Audit Linked
-                                      │   ┌────────────────▼────────────────┐
-                                      │   │           ActivityLog           │
-                                      │   ├─────────────────────────────────┤
-                                      └───┤ id: Integer (PK)                │
-                                          │ project_id: Integer (FK)        │
-                                          │ bug_id: Integer (FK, Optional)  │
-                                          │ user_id / user_name / email     │
-                                          │ action_type / details           │
-                                          │ previous_state / new_state      │
-                                          │ created_at: DateTime            │
-                                          └─────────────────────────────────┘
+│ project_id: Integer (FK)        │   │   │ reported_by_id: Integer (FK)    │
+│ phase_id: Integer (FK, Optional)│   │   │ assigned_to_id: Integer (FK)    │
+│ title: String(200)              │   │   │ created_at / updated_at         │
+│ scheduled_at: DateTime          │   │   └────────────────┬────────────────┘
+│ mom_notes: Text                 │   │                    │ Audit Linked
+│ status: UPCOMING|COMPLETED      │   │   ┌────────────────▼────────────────┐
+└─────────────────────────────────┘   │   │           ActivityLog           │
+│   ├─────────────────────────────────┤
+└───┤ id: Integer (PK)                │
+│ project_id: Integer (FK)        │
+│ bug_id: Integer (FK, Optional)  │
+│ user_id / user_name / email     │
+│ action_type / details           │
+│ previous_state / new_state      │
+│ created_at: DateTime            │
+└─────────────────────────────────┘
 ```
 
 ---
@@ -242,64 +248,64 @@ An Insomnia/Postman-style execution studio accessible on a dedicated page direct
 ### 1. Authentication & Profile
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| `POST` | `/api/auth/register` | Public | Submit new account registration (defaults to `PENDING`) |
-| `POST` | `/api/auth/login` | Public | Authenticate corporate email/password, returns JWT token |
+| `POST` | `/api/auth/register` | Public | Register new corporate account (defaults to `PENDING`) |
+| `POST` | `/api/auth/login` | Public | Authenticate email/password, returns JWT token |
 | `GET` | `/api/auth/profile` | Authenticated | Retrieve current user profile |
-| `PUT` | `/api/auth/profile` | Authenticated | Update current user name, phone, department, bio |
-| `POST` | `/api/auth/profile/avatar` | Authenticated | Upload profile picture (`multipart/form-data`) |
-| `PUT` | `/api/auth/change-password` | Authenticated | Verify old password and set new password |
+| `PUT` | `/api/auth/profile` | Authenticated | Update user name, phone, department, bio |
+| `POST` | `/api/auth/profile/avatar` | Authenticated | Upload profile avatar (`multipart/form-data`) |
+| `PUT` | `/api/auth/change-password` | Authenticated | Verify existing password and set new password |
 
-### 2. Defect & Bug Lifecycle Tracking
+### 2. Analytics & Overview
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| `GET` | `/api/projects/<id>/bugs` | Authenticated | List project bugs with filters (severity, status, phase, assignee, search) |
-| `POST` | `/api/phases/<phaseId>/bugs` | Authenticated | Report a new defect bound to an SDLC phase and project |
-| `PATCH`| `/api/bugs/<id>/status` | Role-Gated | Update state (`NEW`->`ASSIGNED`->`IN_PROGRESS`->`RESOLVED`->`VERIFIED`->`CLOSED`/`REOPENED`) |
-| `GET` | `/api/bugs/<id>/history` | Authenticated | Fetch full chronological audit timeline for the defect |
-| `PUT` | `/api/bugs/<id>` | Gov. Dept / Admin | Update defect title, description, severity, or assignee |
-| `DELETE`| `/api/bugs/<id>` | Super Admin / QA | Remove defect record and audit event |
+| `GET` | `/api/projects/<id>/metrics` | Authenticated | Fetch sprint velocity, completion %, and priority breakdowns |
+| `GET` | `/api/projects/<id>/milestones` | Authenticated | Fetch deliverable schedule scoped to calendar months |
 
-### 3. Super Admin User Management
-| Method | Endpoint | Access | Description |
-|--------|----------|--------|-------------|
-| `GET` | `/api/admin/users` | Super Admin | Fetch all registered corporate users |
-| `POST` | `/api/admin/users` | Super Admin | Manually provision a pre-approved user account |
-| `PUT` | `/api/admin/users/<id>` | Super Admin | Update user Name, Department, Role, and Status |
-| `DELETE` | `/api/admin/users/<id>` | Super Admin | Safely delete user (unassigns tasks, prevents self-deletion) |
-
-### 4. Project & Stage Governance
-| Method | Endpoint | Access | Description |
-|--------|----------|--------|-------------|
-| `GET` | `/api/projects` | Authenticated | List all projects with stage and task metrics |
-| `POST` | `/api/projects` | Super Admin | Create a new corporate project workspace |
-| `GET` | `/api/projects/<id>` | Authenticated | Get project details, dynamic phases, and stages |
-| `POST` | `/api/projects/<id>/phases`| Super Admin | Add dynamic phase with assigned governing department |
-| `DELETE`| `/api/phases/<id>` | Super Admin | Delete stage and cascade cleanup |
-
-### 5. Tasks & Kanban Board
+### 3. SDLC Tasks & Kanban Board
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
 | `GET` | `/api/tasks?project_id=<id>`| Authenticated | Get all tasks for active project |
-| `POST` | `/api/tasks` | Gov. Dept / Admin | Create a task within governing department boundary |
+| `POST` | `/api/tasks` | Gov. Dept / Admin | Create a task within department boundary |
 | `PUT` | `/api/tasks/<id>` | Gov. Dept / Assignee | Update task title, description, priority, or checklist |
-| `PATCH`| `/api/tasks/<id>/status` | Gov. Dept / Assignee | Transition status (`To Do` -> `In Progress` -> `Completed`) |
+| `PATCH`| `/api/tasks/<id>/status` | Gov. Dept / Assignee | Transition status (`PLANNED` -> `IN PROGRESS` -> `COMPLETED`) |
 | `PATCH`| `/api/tasks/<id>/shift-stage`| Gov. Dept / Admin | Shift task to a different SDLC stage |
 | `DELETE`| `/api/tasks/<id>` | Gov. Dept / Admin | Delete task and log activity audit |
 
-### 6. File & Artifact Management
+### 4. Defect & Bug Lifecycle Tracking
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| `GET` | `/api/files?project_id=<id>`| Authenticated | List files and folders for current stage or project |
+| `GET` | `/api/projects/<id>/bugs` | Authenticated | List project bugs with multi-filter queries |
+| `POST` | `/api/phases/<phaseId>/bugs` | Authenticated | Report a new defect bound to an SDLC phase |
+| `PATCH`| `/api/bugs/<id>/status` | Role-Gated | Update state (`NEW`->`ASSIGNED`->`IN_PROGRESS`->`RESOLVED`->`VERIFIED`->`CLOSED`) |
+| `GET` | `/api/bugs/<id>/history` | Authenticated | Fetch full chronological audit timeline |
+| `PUT` | `/api/bugs/<id>` | Gov. Dept / Admin | Update defect title, description, severity, or assignee |
+| `DELETE`| `/api/bugs/<id>` | Super Admin / QA | Remove defect record and audit event |
+
+### 5. Document & File Management
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| `GET` | `/api/files?project_id=<id>`| Authenticated | List files and folders for active stage/project |
 | `POST` | `/api/files/upload` | Gov. Dept / Admin | Upload file attachment (`multipart/form-data`) |
-| `POST` | `/api/files/folder` | Gov. Dept / Admin | Create a folder in stage file tree |
-| `GET` | `/api/files/download/<id>` | Authenticated | Download file attachment |
+| `POST` | `/api/files/folder` | Gov. Dept / Admin | Create a directory folder in the stage repository |
+| `GET` | `/api/files/download/<id>` | Authenticated | Download artifact attachment |
 | `DELETE`| `/api/files/<id>` | Gov. Dept / Admin | Delete file or folder hierarchy |
 
-### 7. Activity Logs & Auditing
+### 6. Meetings & Governance Reviews
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| `GET` | `/api/projects/<id>/activities` | Authenticated | Get regulatory audit logs for project |
-| `POST` | `/api/projects/reset-db` | Super Admin | Factory system reset with sample data seeding |
+| `GET` | `/api/projects/<id>/meetings` | Authenticated | List upcoming and past governance review sessions |
+| `POST` | `/api/projects/<id>/meetings` | Gov. Dept / Admin | Schedule a virtual review session or instant meeting |
+| `POST` | `/api/meetings/<id>/mom` | Gov. Dept / Admin | Record and archive Minutes of Meeting notes |
+
+### 7. User Management & Audit Trail
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| `GET` | `/api/admin/users` | Super Admin | Fetch all registered corporate users |
+| `POST` | `/api/admin/users` | Super Admin | Provision a pre-approved corporate user account |
+| `PUT` | `/api/admin/users/<id>` | Super Admin | Update user Name, Department, Role, and Status |
+| `DELETE` | `/api/admin/users/<id>` | Super Admin | Safe user deletion with task re-assignment guards |
+| `GET` | `/api/projects/<id>/activities` | Authenticated | Query regulatory audit logs with type and date filters |
+| `POST` | `/api/projects/reset-db` | Super Admin | Factory database reset and default data seeding |
 
 ### 8. API Studio CORS Proxy
 | Method | Endpoint | Access | Description |
@@ -313,13 +319,13 @@ An Insomnia/Postman-style execution studio accessible on a dedicated page direct
 ### Prerequisites
 - **Python**: Version 3.10, 3.11, or 3.12+
 - **Node.js**: Version 18.0+ or 20.0+ (with npm)
-- **PostgreSQL** *(Optional)*: Default runs on PostgreSQL at `localhost:5432/sdlc_governance` with seamless automatic fallback to local SQLite (`sdlc_governance.db`).
+- **PostgreSQL** *(Optional)*: Default connects to PostgreSQL at `localhost:5432/sdlc_governance` with seamless automatic fallback to local SQLite (`sdlc_governance.db`).
 
 ---
 
 ### Backend Setup
 
-1. **Navigate to backend directory**:
+1. **Navigate to the backend directory**:
    ```bash
    cd backend
    ```
@@ -395,7 +401,7 @@ The application provides quick-fill demo buttons on the Sign In page:
 
 ---
 
-## Testing & Verification
+## Automated Testing & Verification
 
 Automated end-to-end integration and visual verification suites are included in `scratch/`:
 
@@ -423,11 +429,13 @@ node scratch/verify_api_studio_ui.mjs
 ```
 sdlc-governance-engine/
 ├── backend/
-│   ├── app.py                  # Primary Flask application server & REST routes
-│   ├── config.py               # Database and upload configurations
-│   ├── models.py               # SQLAlchemy ORM schemas & serialization methods
+│   ├── app.py                  # Primary Flask server & REST API endpoints
+│   ├── config.py               # Database URI & file upload configuration
+│   ├── models.py               # SQLAlchemy ORM schemas & serialization logic
 │   ├── requirements.txt        # Backend Python dependencies
-│   ├── reset_db_schema.py      # Database initialization & sample data seeder
+│   ├── reset_db_schema.py      # Database seeder & default records
+│   ├── test_meetings.py        # Automated test suite for Meetings & MoM
+│   ├── verify_backend.py       # End-to-end backend verification script
 │   ├── .env                    # Environment credentials & database URI
 │   └── uploads/                # Local storage for avatars and stage attachments
 │       └── avatars/            # Cropped user profile pictures
@@ -436,20 +444,31 @@ sdlc-governance-engine/
 │   ├── package.json            # Node.js dependencies & build scripts
 │   ├── vite.config.js          # Vite bundler configuration
 │   └── src/
-│       ├── App.jsx             # Main application orchestrator & SDLC Dashboard
+│       ├── App.jsx             # Main dashboard orchestrator & navigation router
 │       ├── main.jsx            # React root mount
-│       ├── index.css           # Tailwind CSS 4 directives & font imports
+│       ├── index.css           # Tailwind CSS 4 directives & design tokens
 │       ├── assets/
-│       │   └── bahl-logo.png   # Official Bank AL Habib Limited crest emblem
+│       │   └── bahl-logo.png   # Official Bank AL Habib Limited emblem
+│       ├── hooks/
+│       │   └── useStagePermission.js # Stage RBAC boundary enforcement hook
 │       └── components/
-│           ├── ApiStudio.jsx   # Insomnia/Postman API Studio & Chained Runner
-│           └── BugTracker.jsx  # Enterprise Defect Lifecycle Governance Console
+│           ├── Sidebar.jsx             # Collapsible branded sidebar navigation
+│           ├── OverviewMetrics.jsx     # Analytics dashboard, velocity charts & KPIs
+│           ├── KanbanBoard.jsx         # SDLC Stage-gated Kanban task board
+│           ├── TimelinePlanner.jsx     # Calendar & Agenda milestone scheduler
+│           ├── StageFilesView.jsx      # Hierarchical stage artifact & document vault
+│           ├── BugTracker.jsx          # Enterprise 7-State Defect Governance Console
+│           ├── ApiStudio.jsx           # Insomnia/Postman API Studio & Chained Runner
+│           ├── MeetingsView.jsx        # Governance meetings schedule & MoM archive
+│           ├── MeetingRoom.jsx         # Virtual review session video workspace
+│           ├── TeamApprovalsView.jsx   # Team access governance & user directory
+│           ├── AuditTrailView.jsx      # Regulatory activity feed & immutable ledger
+│           ├── SnippetDrawer.jsx       # API code snippet generation drawer
+│           └── UploadConfirmModal.jsx  # Stage document upload confirmation modal
 └── README.md                   # Complete system technical documentation
 ```
 
 ---
-
-## License & Compliance
-
-© 2026 Bank AL Habib Limited. All rights reserved.  
-Engineered for strict banking regulatory compliance, ISO 20022 messaging governance, and immutable delivery auditing.
+License & Compliance
+Developed for internal regulatory operations at Bank AL Habib Limited. Designed to comply with ISO 20022, PCI-DSS, and enterprise regulatory compliance frameworks.
+---
